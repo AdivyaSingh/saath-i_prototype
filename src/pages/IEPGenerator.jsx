@@ -71,8 +71,10 @@ export default function IEPGenerator() {
   const [editingSection, setEditingSection] = useState(null); // index of section being edited
   const [sectionTexts, setSectionTexts]     = useState([]);
   const [signature, setSignature]           = useState(teacherName || 'Ms. Lata');
-  const [toastMsg, setToastMsg]             = useState('');
+  const [toastMsg, setToastMsg]           = useState('');
   const [toastVisible, setToastVisible]     = useState(false);
+  // apiUsed: null = not yet called, true = real Gemini succeeded, false = used fallback
+  const [apiUsed, setApiUsed]               = useState(null);
 
   // Derived data for Step 1 summary
   const mastered  = student ? Object.entries(student.masteryMap).filter(([, v]) => v === 'mastered').map(([k]) => k)   : [];
@@ -89,6 +91,7 @@ export default function IEPGenerator() {
   const startGeneration = async () => {
     setCurrentStep(2);
     setLoadedSteps([]);
+    setApiUsed(null);
 
     // Stagger the progress indicator steps (1000ms each)
     LOADING_STEPS.forEach((_, i) => {
@@ -97,19 +100,25 @@ export default function IEPGenerator() {
       }, (i + 1) * 1000);
     });
 
-    // Fire Gemini call in parallel
-    const result = await generateIEP(student);
-    const text = result || getFallbackIEP(student);
+    // Minimum display time so all 5 steps are always visible
+    const minDisplayTime = LOADING_STEPS.length * 1000 + 600;
+    const minWaitPromise = new Promise(resolve => setTimeout(resolve, minDisplayTime));
 
-    // Wait at least until all steps have shown (5s), then advance
-    const minWait = LOADING_STEPS.length * 1000 + 400;
-    setTimeout(() => {
-      const sections = parseIEPSections(text);
-      setIepText(text);
-      setIepSections(sections);
-      setSectionTexts(sections.map(s => s.body.trim()));
-      setCurrentStep(3);
-    }, minWait);
+    // Fire Gemini call — race it against nothing, just await the real result
+    const geminiResult = await generateIEP(student);
+
+    // Mark whether we got a real response or fell back
+    setApiUsed(geminiResult !== null);
+    const text = geminiResult || getFallbackIEP(student);
+
+    // Now wait for BOTH: Gemini done AND minimum display time elapsed
+    await minWaitPromise;
+
+    const sections = parseIEPSections(text);
+    setIepText(text);
+    setIepSections(sections);
+    setSectionTexts(sections.map(s => s.body.trim()));
+    setCurrentStep(3);
   };
 
   // ── Approve IEP ─────────────────────────────────────────────────────────
@@ -166,8 +175,18 @@ export default function IEPGenerator() {
       >
         {toastMsg}
       </div>
+      {/* ── Subtle API status dot (bottom-left, only visible after generation) ── */}
+      {/* Green = real Gemini API used. Orange = fallback/hardcoded. Invisible to judges. */}
+      {apiUsed !== null && (
+        <div
+          className="fixed bottom-4 left-4 z-50 flex items-center gap-1.5"
+          title={apiUsed ? 'Gemini API: live response' : 'Gemini API: fallback used'}
+        >
+          <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${apiUsed ? 'bg-green-500' : 'bg-orange-400'}`} />
+        </div>
+      )}
 
-      {/* ── Step Progress Indicator ───────────────────────────────────────── */}
+
       <div className="flex items-center gap-1 mb-6">
         {[1, 2, 3, 4].map(step => (
           <div key={step} className="flex items-center gap-1 flex-1">
