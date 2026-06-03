@@ -12,6 +12,9 @@ export const COMPANIONS = [
 ];
 
 // ─── SCREENING DATA ───────────────────────────────────────────────────────────
+// Threshold under which a student is classified as 'typical' (no SLD)
+export const TYPICAL_THRESHOLD = 0.25;
+
 // Word sets for the rhyming activity — each round has 4 words with 2 rhyming pairs
 export const SCREENING_WORD_SETS = [
   { words: ['CAT', 'BAT', 'DOG', 'SUN'], rhymePair: [0, 1], difficulty: 'easy' },

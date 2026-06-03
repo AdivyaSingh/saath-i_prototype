@@ -18,9 +18,11 @@ import {
 import { useApp } from '../App';
 import {
   STRINGS,
+  COMPANIONS,
   SCREENING_WORD_SETS,
   SCREENING_PILE_ROUNDS,
   SCREENING_TRACE_PATHS,
+  TYPICAL_THRESHOLD,
 } from '../data';
 import Layout from '../components/Layout';
 import { saveStudentToFirebase, saveScreeningResults } from '../firebase';
@@ -339,12 +341,16 @@ const deriveProfile = (rhymeData, pileData, traceData, isDemoMode) => {
   }
 
   // Determine detected type
-  let detectedType = 'dyslexia';
+  let detectedType = 'typical';
   const maxScore = Math.max(scores.dyslexiaScore, scores.dyscalculiaScore, scores.dysgraphiaScore);
-  if (maxScore === scores.dyscalculiaScore) detectedType = 'dyscalculia';
-  if (maxScore === scores.dysgraphiaScore) detectedType = 'dysgraphia';
-  // If dyslexia ties or wins, it stays as 'dyslexia'
-  if (scores.dyslexiaScore >= maxScore) detectedType = 'dyslexia';
+  
+  if (maxScore > TYPICAL_THRESHOLD) {
+    detectedType = 'dyslexia';
+    if (maxScore === scores.dyscalculiaScore) detectedType = 'dyscalculia';
+    if (maxScore === scores.dysgraphiaScore) detectedType = 'dysgraphia';
+    // If dyslexia ties or wins, it stays as 'dyslexia'
+    if (scores.dyslexiaScore >= maxScore) detectedType = 'dyslexia';
+  }
 
   return { ...scores, detectedType };
 };
@@ -716,6 +722,9 @@ export default function Screening() {
       const rhymeErrorRate = rhymeD.totalRounds > 0
         ? rhymeD.incorrectRounds / rhymeD.totalRounds
         : 0;
+      const pileErrorRate = pileD.totalRounds > 0
+        ? pileD.incorrectRounds / pileD.totalRounds
+        : 0;
       const closeNumberErrorRate = pileD.hardRounds > 0
         ? pileD.hardRoundErrors / pileD.hardRounds
         : 0;
@@ -727,6 +736,7 @@ export default function Screening() {
         rhymingAccuracy: Math.round((1 - rhymeErrorRate) * 100),
         // Number Sense
         countingSpeed: Math.round(avgPileTime / 1000 * 10) / 10,
+        countingAccuracy: Math.round((1 - pileErrorRate) * 100),
         closeNumberConfusion: closeNumberErrorRate > 0.5,
         // Motor Control
         lineSteadiness: traceData.jitterScore > 0.5 ? 'Very Shaky' : traceData.jitterScore > 0.25 ? 'Shaky' : 'Steady',

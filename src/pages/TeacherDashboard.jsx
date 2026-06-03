@@ -722,7 +722,7 @@ export default function TeacherDashboard() {
                         <TelemetryStat
                           label={language === 'HI' ? 'तुकबंदी गति' : 'Rhyming Speed'}
                           value={`${activeStudent.telemetry.rhymingSpeed}s avg`}
-                          barPercent={Math.min(100, (activeStudent.telemetry.rhymingSpeed / 5) * 100)}
+                          barPercent={Math.max(0, 100 - (activeStudent.telemetry.rhymingSpeed / 5) * 100)}
                           barColor="bg-accent"
                         />
                         <TelemetryStat
@@ -754,8 +754,14 @@ export default function TeacherDashboard() {
                         <TelemetryStat
                           label={language === 'HI' ? 'गिनती गति' : 'Counting Speed'}
                           value={`${activeStudent.telemetry.countingSpeed}s avg`}
-                          barPercent={Math.min(100, (activeStudent.telemetry.countingSpeed / 5) * 100)}
-                          barColor="bg-warm"
+                          barPercent={Math.max(0, 100 - (activeStudent.telemetry.countingSpeed / 5) * 100)}
+                          barColor="bg-indigo-500"
+                        />
+                        <TelemetryStat
+                          label={language === 'HI' ? 'गिनती सटीकता' : 'Counting Accuracy'}
+                          value={`${activeStudent.telemetry.countingAccuracy ?? 0}%`}
+                          barPercent={activeStudent.telemetry.countingAccuracy ?? 0}
+                          barColor="bg-green-500"
                         />
                         <div className="flex items-center justify-between gap-3 py-1.5">
                           <span className="text-xs text-muted flex-shrink-0 w-32">
