@@ -44,33 +44,24 @@ export default function Layout({
   // Three states: 'online' | 'syncing' | 'offline'
   // Timings (ms) — tweak these to adjust demo feel:
   const SYNC_DURATION_MS = 3500;   // how long the yellow "syncing" state lasts (3-4 seconds for Firebase catch-up feel)
-  const ONLINE_HIDE_MS   = 3000;   // how long the green "connected" banner stays visible
 
   const [connState, setConnState] = useState(
     typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'offline'
   );
-  // Banner is hidden when online at initial load; shows for offline or sync transitions
-  const [bannerVisible, setBannerVisible] = useState(
-    typeof navigator !== 'undefined' ? !navigator.onLine : false
-  );
-  const hideTimerRef = useRef(null);
+  // Banner is always visible
+  const bannerVisible = true;
   const syncTimerRef = useRef(null);
 
   useEffect(() => {
     const handleOffline = () => {
-      clearTimeout(hideTimerRef.current);
       clearTimeout(syncTimerRef.current);
       setConnState('offline');
-      setBannerVisible(true);
     };
 
     const handleOnline = () => {
-      clearTimeout(hideTimerRef.current);
       setConnState('syncing');
-      setBannerVisible(true);
       syncTimerRef.current = setTimeout(() => {
         setConnState('online');
-        hideTimerRef.current = setTimeout(() => setBannerVisible(false), ONLINE_HIDE_MS);
       }, SYNC_DURATION_MS);
     };
 
@@ -79,7 +70,6 @@ export default function Layout({
     return () => {
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
-      clearTimeout(hideTimerRef.current);
       clearTimeout(syncTimerRef.current);
     };
   }, []);
@@ -129,22 +119,22 @@ export default function Layout({
     offline: {
       bg: 'bg-red-600',
       icon: WifiOff,
-      textEN: 'No internet — changes saved locally',
-      textHI: 'इंटरनेट नहीं — बदलाव स्थानीय रूप से सेव हुए',
+      textEN: 'Offline mode — data saved locally',
+      textHI: 'ऑफलाइन मोड — बदलाव स्थानीय रूप से सेव हुए',
       spinning: false,
     },
     syncing: {
       bg: 'bg-amber-500',
       icon: Loader2,
-      textEN: 'Reconnected — syncing data...',
-      textHI: 'कनेक्ट हुआ — डेटा सिंक हो रहा है...',
+      textEN: 'Reconnected — syncing to database...',
+      textHI: 'कनेक्ट हुआ — डेटाबेस से सिंक हो रहा है...',
       spinning: true,
     },
     online: {
-      bg: 'bg-teal-600',
+      bg: 'bg-blue-600',
       icon: Wifi,
-      textEN: 'Connected',
-      textHI: 'कनेक्टेड',
+      textEN: 'Online — Database connected',
+      textHI: 'ऑनलाइन — डेटाबेस कनेक्टेड',
       spinning: false,
     },
   };
@@ -258,10 +248,7 @@ export default function Layout({
     <div className="min-h-screen bg-surface flex flex-col">
       {/* ── Three-state connectivity banner ── */}
       <div
-        className={`${cfg.bg} text-white text-xs px-4 flex items-center justify-center gap-2 overflow-hidden transition-all duration-500 ease-in-out ${
-          bannerVisible ? 'py-1.5 opacity-100' : 'py-0 opacity-0 pointer-events-none'
-        }`}
-        style={{ maxHeight: bannerVisible ? '32px' : '0px' }}
+        className={`${cfg.bg} text-white text-xs px-4 flex items-center justify-center gap-2 overflow-hidden transition-colors duration-500 ease-in-out py-1.5`}
         role="status"
         aria-live="polite"
       >
