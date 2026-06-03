@@ -184,6 +184,7 @@ const Onboarding = () => {
       title={step === 1 ? step1Titles[subStep] : (S.chooseCompanion || 'Choose your learning buddy')}
       showBack={step === 2 || subStep > 0}
       showCompanion
+      pageContext="Setting up their profile and choosing a companion"
       companionState={selectedCompanion ? 'happy' : 'idle'}
       lang={lang}
       setLanguage={(l) => updateState({ language: l })}

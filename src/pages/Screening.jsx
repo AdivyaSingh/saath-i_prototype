@@ -401,6 +401,16 @@ export default function Screening() {
   const [rhymeCorrectPair, setRhymeCorrectPair] = useState([]); // revealed correct pair indices
   const rhymeLocked = useRef(false);
   const rhymeRoundStart = useRef(Date.now());
+  const [shuffledRhymeIndices, setShuffledRhymeIndices] = useState([0, 1, 2, 3]);
+
+  useEffect(() => {
+    const indices = [0, 1, 2, 3];
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    setShuffledRhymeIndices(indices);
+  }, [rhymeRound]);
 
   // Tracking data for dyslexia scoring
   const rhymeDataRef = useRef({
@@ -800,6 +810,7 @@ export default function Screening() {
       title={S.screeningTitle}
       showBack={false}
       showCompanion
+      pageContext="Completing their initial screening games"
       companionState={companionState}
       lang={lang}
       setLanguage={(l) => updateState({ language: l })}
@@ -856,7 +867,8 @@ export default function Screening() {
 
             {/* Word cards - 2x2 grid */}
             <div className="grid grid-cols-2 gap-3">
-              {SCREENING_WORD_SETS[rhymeRound].words.map((word, idx) => {
+              {shuffledRhymeIndices.map((idx) => {
+                const word = SCREENING_WORD_SETS[rhymeRound].words[idx];
                 const isSelected = rhymeSelected.includes(idx);
                 const isCorrectReveal = rhymeCorrectPair.includes(idx);
                 const isFeedbackCorrect =

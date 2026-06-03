@@ -323,6 +323,7 @@ export default function ReadingRoom() {
       title={S.readingRoom}
       showBack
       showCompanion
+      pageContext="Reading a story in the Reading Room"
       companionState={companionState}
       lang={lang}
       setLanguage={(l) => updateState({ language: l })}

@@ -137,6 +137,7 @@ export default function ExpressionStudio() {
       title={S.expressionStudio}
       showBack
       showCompanion
+      pageContext="In the Expression Studio creating a story or drawing"
       companionState={companionState}
       lang={lang}
       setLanguage={(l) => updateState({ language: l })}

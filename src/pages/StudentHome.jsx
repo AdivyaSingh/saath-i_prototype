@@ -153,6 +153,7 @@ const StudentHome = () => {
       title={S.appName}
       showBack={false}
       showCompanion
+      pageContext="On the main home dashboard"
       companionState={companionState}
       lang={lang}
       setLanguage={(l) => updateState({ language: l })}

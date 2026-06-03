@@ -43,6 +43,7 @@ export default function NumberWorld() {
       title={S.numberWorld}
       showBack
       showCompanion
+      pageContext="Playing number games in Number World"
       companionState={companionState}
       lang={lang}
       setLanguage={(l) => updateState({ language: l })}

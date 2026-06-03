@@ -87,6 +87,7 @@ const AchievementWall = () => {
       showNav
       showBack
       showCompanion
+      pageContext="Viewing their achievements and progress"
       companionState="happy"
       lang={lang}
       setLanguage={(l) => updateState({ language: l })}
