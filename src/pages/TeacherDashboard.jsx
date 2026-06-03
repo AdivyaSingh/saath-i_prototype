@@ -1,23 +1,36 @@
 // src/pages/TeacherDashboard.jsx
 // Route: /teacher
-// Two states in one file: Login form → Dashboard with student grid + slide-in profile panel.
-// Student profile panel is NOT a separate route — it is a slide-in overlay within this page.
+// Two states: Login (teacherLoggedIn=false) → Dashboard (teacherLoggedIn=true)
+// Student profile panel is a slide-in overlay within this page — not a separate route.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, LogOut, ChevronDown } from 'lucide-react';
+import {
+  X, LogOut, ChevronDown, School, User, Wifi, BookOpen,
+  Users, BarChart3, AlertTriangle, TrendingUp, TrendingDown,
+  Minus, Flame, Lightbulb, Loader2, Mic, Image as ImageIcon,
+} from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../App';
 import { DEMO_STUDENTS, STRINGS } from '../data';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-const sldBadge = {
-  dyslexia:    'bg-blue-100 text-blue-700',
-  dyscalculia: 'bg-purple-100 text-purple-700',
-  dysgraphia:  'bg-orange-100 text-orange-700',
+// Maps SLD type → CSS badge class defined in index.css
+const sldBadgeClass = {
+  dyslexia:    'badge badge-dyslexia',
+  dyscalculia: 'badge badge-dyscalculia',
+  dysgraphia:  'badge badge-dysgraphia',
 };
 
+// Maps status → CSS status-dot class defined in index.css
+const statusDotClass = {
+  green:  'status-dot status-dot-green',
+  yellow: 'status-dot status-dot-yellow',
+  red:    'status-dot status-dot-red',
+};
+
+// Mastery map tile styles
 const masteryStyle = {
   mastered:    'bg-green-100 text-green-700 border border-green-200',
   in_progress: 'bg-yellow-100 text-yellow-700 border border-yellow-200',
@@ -26,31 +39,86 @@ const masteryStyle = {
 };
 
 const masteryLabel = {
-  mastered:    { EN: 'Mastered ✓', HI: 'सीखा ✓' },
+  mastered:    { EN: 'Mastered', HI: 'सीखा' },
   in_progress: { EN: 'In Progress', HI: 'जारी है' },
   struggling:  { EN: 'Needs Support', HI: 'मदद चाहिए' },
   not_started: { EN: 'Not Started', HI: 'शुरू नहीं' },
 };
 
-const trendIcon = {
-  improving: { icon: '↑', cls: 'text-green-600 font-bold' },
-  stable:    { icon: '→', cls: 'text-muted' },
-  worsening: { icon: '↓', cls: 'text-red-500 font-bold' },
-};
-
-const statusDot = {
-  green:  'bg-green-500',
-  yellow: 'bg-yellow-400',
-  red:    'bg-red-500',
+// Trend icons — Lucide components
+const trendConfig = {
+  improving: { Icon: TrendingUp,   cls: 'text-green-600' },
+  stable:    { Icon: Minus,        cls: 'text-muted' },
+  worsening: { Icon: TrendingDown, cls: 'text-red-500' },
 };
 
 // ─── FILTER TABS ──────────────────────────────────────────────────────────────
 const FILTER_TABS = [
-  { id: 'all',       label: 'All' },
-  { id: 'attention', label: 'Needs Attention' },
-  { id: 'active',    label: 'Active' },
-  { id: 'sld',       label: 'By SLD Type' },
+  { id: 'all',       labelEN: 'All',              labelHI: 'सभी' },
+  { id: 'attention', labelEN: 'Needs Attention',   labelHI: 'ध्यान चाहिए' },
+  { id: 'active',    labelEN: 'Active',            labelHI: 'सक्रिय' },
+  { id: 'sld',       labelEN: 'By SLD Type',       labelHI: 'SLD प्रकार' },
 ];
+
+// ─── DYNAMIC STATS DERIVED FROM DATA ──────────────────────────────────────────
+const deriveStats = (language) => {
+  const total = DEMO_STUDENTS.length;
+  const needsAttention = DEMO_STUDENTS.filter(s => s.status === 'red' || s.status === 'yellow').length;
+  const avgSessions = Math.round(DEMO_STUDENTS.reduce((sum, s) => sum + s.weeklyStats.activitiesCompleted, 0) / total);
+  const improvingCount = DEMO_STUDENTS.reduce((sum, s) =>
+    sum + s.errorPatterns.filter(ep => ep.trend === 'improving').length, 0);
+
+  return [
+    {
+      Icon: Users,
+      value: total,
+      label: language === 'HI' ? 'छात्र सक्रिय' : 'students active',
+      color: 'text-accent',
+      bg: 'bg-accent/10',
+    },
+    {
+      Icon: BarChart3,
+      value: avgSessions,
+      label: language === 'HI' ? 'औसत गतिविधियाँ/सप्ताह' : 'avg activities/week',
+      color: 'text-calm',
+      bg: 'bg-calm/10',
+    },
+    {
+      Icon: AlertTriangle,
+      value: needsAttention,
+      label: language === 'HI' ? 'ध्यान चाहिए' : 'needs attention',
+      color: 'text-warm',
+      bg: 'bg-warm/10',
+    },
+    {
+      Icon: TrendingUp,
+      value: improvingCount,
+      label: language === 'HI' ? 'सुधार रुझान' : 'improving trends',
+      color: 'text-green-600',
+      bg: 'bg-green-50',
+    },
+  ];
+};
+
+// Portfolio items per student — maps student id → portfolio entries
+const STUDENT_PORTFOLIO = {
+  student_001: [
+    { type: 'voice', titleEN: "The Clever Crow — Retelling", titleHI: "चतुर कौआ — पुनर्कथन", dateEN: 'Reading Room — May 2025', dateHI: 'पठन कक्ष — मई 2025' },
+    { type: 'story', titleEN: "Meera's Magical Door", titleHI: "मीरा का जादुई दरवाज़ा", dateEN: 'Expression Studio — June 2025', dateHI: 'अभिव्यक्ति स्टूडियो — जून 2025' },
+  ],
+  student_002: [
+    { type: 'image', titleEN: "Object Counting — 14 stars", titleHI: "वस्तु गिनती — 14 तारे", dateEN: 'Number World — May 2025', dateHI: 'संख्या जगत — मई 2025' },
+  ],
+  student_003: [
+    { type: 'voice', titleEN: "Lion and Mouse — Retelling", titleHI: "शेर और चूहा — पुनर्कथन", dateEN: 'Reading Room — April 2025', dateHI: 'पठन कक्ष — अप्रैल 2025' },
+  ],
+};
+
+const portfolioIcon = {
+  voice: Mic,
+  story: BookOpen,
+  image: ImageIcon,
+};
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function TeacherDashboard() {
@@ -65,13 +133,21 @@ export default function TeacherDashboard() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Dashboard local state
-  const [activeTab, setActiveTab]           = useState('all');
-  const [sortBy, setSortBy]                 = useState('status');
+  const [activeTab, setActiveTab]             = useState('all');
+  const [sldSubFilter, setSldSubFilter]       = useState('all'); // sub-filter when tab = 'sld'
+  const [sortBy, setSortBy]                   = useState('status');
   const [activeStudentId, setActiveStudentId] = useState(null);
 
   // Profile panel AI suggestion editing
   const [editingSuggestion, setEditingSuggestion] = useState(false);
   const [suggestionText, setSuggestionText]       = useState('');
+
+  // Close panel on Escape key
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') setActiveStudentId(null); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   // ── Login handler ────────────────────────────────────────────────────────
   const handleLogin = () => {
@@ -87,15 +163,26 @@ export default function TeacherDashboard() {
     .filter(s => {
       if (activeTab === 'attention') return s.status === 'red' || s.status === 'yellow';
       if (activeTab === 'active')    return s.status === 'green';
-      return true; // 'all' and 'sld' — 'sld' shows all, could add grouping
+      if (activeTab === 'sld')       return sldSubFilter === 'all' || s.sldType === sldSubFilter;
+      return true;
     })
     .sort((a, b) => {
-      if (sortBy === 'name')   return a.name.localeCompare(b.name);
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
       if (sortBy === 'status') {
         const order = { red: 0, yellow: 1, green: 2 };
         return (order[a.status] ?? 3) - (order[b.status] ?? 3);
       }
-      return 0; // lastActive — leave as-is for demo
+      if (sortBy === 'lastActive') {
+        // Parse "2 hours ago", "1 day ago", "8 days ago" for rough sort
+        const parseTime = (str) => {
+          const n = parseInt(str) || 0;
+          if (str.includes('hour')) return n;
+          if (str.includes('day'))  return n * 24;
+          return n * 24 * 7;
+        };
+        return parseTime(a.lastActive) - parseTime(b.lastActive);
+      }
+      return 0;
     });
 
   // ── Active student for slide-in panel ───────────────────────────────────
@@ -108,6 +195,9 @@ export default function TeacherDashboard() {
     setEditingSuggestion(false);
     setActiveStudentId(student.id);
   };
+
+  // Stats derived from data
+  const stats = deriveStats(language);
 
   // ─────────────────────────────────────────────────────────────────────────
   // STATE 1 — LOGIN FORM
@@ -128,16 +218,17 @@ export default function TeacherDashboard() {
             <button
               onClick={() => updateState({ language: language === 'EN' ? 'HI' : 'EN' })}
               className="bg-white border border-gray-200 text-primary font-semibold text-sm px-3 py-1 rounded-lg min-h-[48px] hover:bg-gray-50 transition-colors"
+              aria-label="Toggle language"
             >
               {language === 'EN' ? 'हिंदी' : 'EN'}
             </button>
           </div>
 
-          <div className="w-full max-w-sm">
+          <div className="w-full max-w-sm animate-fadeIn">
             {/* Logo area */}
             <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-calm rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm">
-                <span className="text-3xl">📊</span>
+              <div className="w-16 h-16 bg-calm/15 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm border border-calm/20">
+                <BarChart3 size={32} className="text-calm" />
               </div>
               <h1 className="text-2xl font-bold text-primary">
                 Saath-i
@@ -159,13 +250,17 @@ export default function TeacherDashboard() {
                 <label className="block text-sm font-semibold text-primary mb-1.5">
                   {S.schoolCode}
                 </label>
-                <input
-                  type="text"
-                  value={schoolCode}
-                  onChange={e => setSchoolCode(e.target.value)}
-                  placeholder="e.g. SCH001"
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base text-primary font-medium focus:border-calm focus:outline-none transition-colors min-h-[48px]"
-                />
+                <div className="relative">
+                  <School size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    type="text"
+                    value={schoolCode}
+                    onChange={e => setSchoolCode(e.target.value)}
+                    placeholder="e.g. SCH001"
+                    aria-label="School code"
+                    className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-4 py-3 text-base text-primary font-medium focus:border-calm focus:outline-none transition-colors min-h-[48px]"
+                  />
+                </div>
               </div>
 
               {/* Teacher Name */}
@@ -173,13 +268,17 @@ export default function TeacherDashboard() {
                 <label className="block text-sm font-semibold text-primary mb-1.5">
                   {S.teacherName}
                 </label>
-                <input
-                  type="text"
-                  value={inputName}
-                  onChange={e => setInputName(e.target.value)}
-                  placeholder="Ms. Lata"
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-base text-primary font-medium focus:border-calm focus:outline-none transition-colors min-h-[48px]"
-                />
+                <div className="relative">
+                  <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    type="text"
+                    value={inputName}
+                    onChange={e => setInputName(e.target.value)}
+                    placeholder="Ms. Lata"
+                    aria-label="Teacher name"
+                    className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-4 py-3 text-base text-primary font-medium focus:border-calm focus:outline-none transition-colors min-h-[48px]"
+                  />
+                </div>
               </div>
 
               {/* Login button */}
@@ -187,10 +286,10 @@ export default function TeacherDashboard() {
                 onClick={handleLogin}
                 disabled={isLoggingIn}
                 aria-label="Login as teacher"
-                className="w-full bg-calm text-white font-semibold py-3 px-6 rounded-xl min-h-[48px] hover:bg-teal-600 transition-colors shadow-sm disabled:opacity-60 flex items-center justify-center gap-2"
+                className="btn-calm w-full"
               >
                 {isLoggingIn
-                  ? <><span className="animate-spin">⏳</span> {language === 'HI' ? 'लॉगिन हो रहा है...' : 'Logging in...'}</>
+                  ? <><Loader2 size={16} className="animate-spin" /> {language === 'HI' ? 'लॉगिन हो रहा है...' : 'Logging in...'}</>
                   : S.loginButton}
               </button>
 
@@ -205,6 +304,7 @@ export default function TeacherDashboard() {
             {/* Back to student view */}
             <button
               onClick={() => navigate('/')}
+              aria-label="Back to student mode"
               className="w-full mt-4 text-muted text-sm text-center hover:text-accent transition-colors min-h-[48px]"
             >
               ← {language === 'HI' ? 'छात्र मोड पर वापस जाएं' : 'Back to student mode'}
@@ -227,24 +327,36 @@ export default function TeacherDashboard() {
       lang={language}
       setLanguage={(lang) => updateState({ language: lang })}
     >
-      {/* ── Custom Top Bar (replaces Layout nav on teacher pages) ──────────── */}
+      {/* ── Custom Top Bar ──────────────────────────────────────────────── */}
       <div className="bg-card border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-8 z-30 shadow-sm">
         <div>
           <h1 className="text-xl font-bold text-primary leading-tight">
             {language === 'HI' ? `${teacherName} की कक्षा` : `${teacherName}'s Class`}
           </h1>
-          <p className="text-xs text-muted flex items-center gap-1">
-            <span>📶</span>
+          <p className="text-xs text-muted flex items-center gap-1.5 mt-0.5">
+            <Wifi size={12} className="text-green-500" />
             <span>{language === 'HI' ? 'अभी सिंक हुआ' : 'Last synced: Just now'}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Language toggle */}
           <button
             onClick={() => updateState({ language: language === 'EN' ? 'HI' : 'EN' })}
+            aria-label="Toggle language"
             className="bg-white border border-gray-200 text-primary font-semibold text-sm px-3 py-1 rounded-lg min-h-[48px] hover:bg-gray-50 transition-colors"
           >
             {language === 'EN' ? 'हिंदी' : 'EN'}
           </button>
+          {/* Resource Library */}
+          <button
+            onClick={() => navigate('/teacher/resources')}
+            aria-label="Resource Library"
+            className="flex items-center gap-1.5 text-sm text-calm border border-calm/30 px-3 py-1 rounded-lg min-h-[48px] hover:bg-calm/10 transition-colors font-semibold"
+          >
+            <BookOpen size={14} />
+            <span className="hidden sm:inline">{language === 'HI' ? 'संसाधन' : 'Resources'}</span>
+          </button>
+          {/* Logout */}
           <button
             onClick={() => updateState({ teacherLoggedIn: false })}
             aria-label="Logout"
@@ -259,14 +371,11 @@ export default function TeacherDashboard() {
       <div className="py-6">
         {/* ── Summary Stats Row ──────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-6">
-          {[
-            { icon: '👥', value: '3', label: language === 'HI' ? 'छात्र सक्रिय' : 'students active' },
-            { icon: '📊', value: '1', label: language === 'HI' ? 'IEP बाकी' : 'IEP due' },
-            { icon: '⚠️', value: '1', label: language === 'HI' ? 'ध्यान चाहिए' : 'needs attention' },
-            { icon: '📈', value: '4', label: language === 'HI' ? 'औसत सत्र/सप्ताह' : 'avg sessions/week' },
-          ].map((stat, i) => (
+          {stats.map((stat, i) => (
             <div key={i} className="bg-card rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3">
-              <span className="text-2xl">{stat.icon}</span>
+              <div className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center flex-shrink-0`}>
+                <stat.Icon size={20} className={stat.color} />
+              </div>
               <div>
                 <p className="text-xl font-bold text-primary leading-none">{stat.value}</p>
                 <p className="text-xs text-muted mt-0.5">{stat.label}</p>
@@ -283,14 +392,14 @@ export default function TeacherDashboard() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                aria-label={`Filter ${tab.label}`}
+                aria-label={`Filter ${tab.labelEN}`}
                 className={`px-3 py-2 rounded-xl text-sm font-semibold whitespace-nowrap min-h-[48px] border-2 transition-all duration-200 ${
                   activeTab === tab.id
                     ? 'bg-primary text-white border-primary'
                     : 'bg-card text-muted border-gray-200 hover:border-calm hover:text-calm'
                 }`}
               >
-                {tab.label}
+                {language === 'HI' ? tab.labelHI : tab.labelEN}
               </button>
             ))}
           </div>
@@ -311,6 +420,26 @@ export default function TeacherDashboard() {
           </div>
         </div>
 
+        {/* ── SLD sub-filter (only when tab = 'sld') ─────────────────────── */}
+        {activeTab === 'sld' && (
+          <div className="flex gap-2 mb-4 animate-fadeIn">
+            {['all', 'dyslexia', 'dyscalculia', 'dysgraphia'].map(type => (
+              <button
+                key={type}
+                onClick={() => setSldSubFilter(type)}
+                aria-label={`Filter by ${type}`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold min-h-[40px] border-2 transition-all capitalize ${
+                  sldSubFilter === type
+                    ? 'bg-calm text-white border-calm'
+                    : 'bg-card text-muted border-gray-200 hover:border-calm'
+                }`}
+              >
+                {type === 'all' ? (language === 'HI' ? 'सभी' : 'All') : type}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── Student Grid ───────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {filteredStudents.map(student => (
@@ -321,10 +450,10 @@ export default function TeacherDashboard() {
               {/* Card header: status dot + SLD badge */}
               <div className="flex items-center gap-2 mb-2">
                 <span
-                  className={`w-3 h-3 rounded-full flex-shrink-0 ${statusDot[student.status] || 'bg-gray-400'}`}
+                  className={statusDotClass[student.status] || 'status-dot bg-gray-400'}
                   aria-label={`Status: ${student.status}`}
                 />
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${sldBadge[student.sldType] || 'bg-gray-100 text-gray-600'}`}>
+                <span className={sldBadgeClass[student.sldType] || 'badge bg-gray-100 text-gray-600'}>
                   {student.sldType}
                 </span>
                 <span className="ml-auto text-xs text-muted font-medium">
@@ -342,12 +471,14 @@ export default function TeacherDashboard() {
 
               {/* Streak */}
               {student.streakDays > 0 ? (
-                <p className="text-xs text-warm font-semibold mb-3">
-                  🔥 {student.streakDays}{language === 'HI' ? '-दिन स्ट्रीक' : '-day streak'}
+                <p className="text-xs text-warm font-semibold mb-3 flex items-center gap-1">
+                  <Flame size={13} className="text-warm" />
+                  {student.streakDays}{language === 'HI' ? '-दिन स्ट्रीक' : '-day streak'}
                 </p>
               ) : (
-                <p className="text-xs text-red-400 font-semibold mb-3">
-                  ⚠️ {language === 'HI' ? 'कोई सक्रियता नहीं' : 'No recent activity'}
+                <p className="text-xs text-red-400 font-semibold mb-3 flex items-center gap-1">
+                  <AlertTriangle size={13} />
+                  {language === 'HI' ? 'कोई सक्रियता नहीं' : 'No recent activity'}
                 </p>
               )}
 
@@ -372,15 +503,35 @@ export default function TeacherDashboard() {
           ))}
         </div>
 
-        {/* Resource Library link */}
+        {/* Empty state */}
+        {filteredStudents.length === 0 && (
+          <div className="text-center py-12 animate-fadeIn">
+            <Users size={40} className="text-muted mx-auto mb-3 opacity-50" />
+            <p className="text-muted text-sm">
+              {language === 'HI' ? 'इस फ़िल्टर के लिए कोई छात्र नहीं मिला।' : 'No students match this filter.'}
+            </p>
+            <button
+              onClick={() => { setActiveTab('all'); setSldSubFilter('all'); }}
+              className="mt-3 text-calm text-sm font-semibold hover:underline min-h-[48px]"
+              aria-label="Clear filters"
+            >
+              {language === 'HI' ? 'फ़िल्टर हटाएं' : 'Clear filters'}
+            </button>
+          </div>
+        )}
+
+        {/* Resource Library link banner */}
         <div className="mt-6 bg-gradient-to-r from-primary to-accent rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-white font-semibold text-sm">
-              {language === 'HI' ? '📚 संसाधन पुस्तकालय' : '📚 Resource Library'}
-            </p>
-            <p className="text-blue-200 text-xs mt-0.5">
-              {language === 'HI' ? 'पाठ योजनाएं और टेम्पलेट' : 'Lesson plans, guides & templates'}
-            </p>
+          <div className="flex items-center gap-3">
+            <BookOpen size={24} className="text-white/80" />
+            <div>
+              <p className="text-white font-semibold text-sm">
+                {language === 'HI' ? 'संसाधन पुस्तकालय' : 'Resource Library'}
+              </p>
+              <p className="text-blue-200 text-xs mt-0.5">
+                {language === 'HI' ? 'पाठ योजनाएं और टेम्पलेट' : 'Lesson plans, guides & templates'}
+              </p>
+            </div>
           </div>
           <button
             onClick={() => navigate('/teacher/resources')}
@@ -399,7 +550,7 @@ export default function TeacherDashboard() {
       {/* Backdrop */}
       {activeStudentId && (
         <div
-          className="fixed inset-0 bg-black/40 z-40"
+          className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-300"
           onClick={() => setActiveStudentId(null)}
           aria-label="Close panel"
         />
@@ -407,10 +558,12 @@ export default function TeacherDashboard() {
 
       {/* Panel */}
       <div
-        className={`fixed inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl z-50 transform transition-transform duration-300 ${
+        className={`fixed inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-out ${
           activeStudentId ? 'translate-x-0' : 'translate-x-full'
         }`}
         aria-label="Student profile panel"
+        role="dialog"
+        aria-modal="true"
       >
         {activeStudent && (
           <div className="h-full overflow-y-auto">
@@ -419,10 +572,10 @@ export default function TeacherDashboard() {
               <div>
                 <h2 className="text-2xl font-bold text-primary">{activeStudent.name}</h2>
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                  <span className={`text-xs font-medium px-2 py-1 rounded-full capitalize ${sldBadge[activeStudent.sldType] || ''}`}>
+                  <span className={sldBadgeClass[activeStudent.sldType] || 'badge'}>
                     {activeStudent.sldType}
                   </span>
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full capitalize">
+                  <span className="badge bg-gray-100 text-gray-600 border border-gray-200">
                     {activeStudent.severity}
                   </span>
                   <span className="text-xs text-muted">
@@ -443,8 +596,9 @@ export default function TeacherDashboard() {
             <div className="px-6 py-4 space-y-6">
               {/* ── Section 1: Mastery Map ────────────────────────────── */}
               <section>
-                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3">
-                  {language === 'HI' ? '📊 दक्षता मानचित्र' : '📊 Mastery Map'}
+                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <BarChart3 size={14} className="text-calm" />
+                  {language === 'HI' ? 'दक्षता मानचित्र' : 'Mastery Map'}
                 </h3>
                 <div className="flex flex-wrap gap-2 mb-3">
                   {Object.entries(activeStudent.masteryMap).map(([concept, status]) => (
@@ -474,16 +628,17 @@ export default function TeacherDashboard() {
 
               {/* ── Section 2: Error Pattern Insights ────────────────── */}
               <section>
-                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3">
-                  {language === 'HI' ? '🔍 त्रुटि पैटर्न' : '🔍 Error Pattern Insights'}
+                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <AlertTriangle size={14} className="text-warm" />
+                  {language === 'HI' ? 'त्रुटि पैटर्न' : 'Error Pattern Insights'}
                 </h3>
                 <div className="space-y-2">
                   {activeStudent.errorPatterns.map((ep, i) => {
-                    const trend = trendIcon[ep.trend] || { icon: '→', cls: 'text-muted' };
+                    const trend = trendConfig[ep.trend] || trendConfig.stable;
                     return (
                       <div key={i} className="bg-surface rounded-xl p-3 flex items-start gap-3 border border-gray-100">
-                        <span className={`text-lg font-bold mt-0.5 flex-shrink-0 ${trend.cls}`}>
-                          {trend.icon}
+                        <span className={`mt-0.5 flex-shrink-0 ${trend.cls}`}>
+                          <trend.Icon size={18} />
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-primary leading-snug">{ep.pattern}</p>
@@ -500,29 +655,26 @@ export default function TeacherDashboard() {
 
               {/* ── Section 3: This Week ──────────────────────────────── */}
               <section>
-                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3">
-                  {language === 'HI' ? '📅 इस सप्ताह' : '📅 This Week'}
+                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <TrendingUp size={14} className="text-accent" />
+                  {language === 'HI' ? 'इस सप्ताह' : 'This Week'}
                 </h3>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="flex gap-2">
                   {[
                     {
                       value: activeStudent.weeklyStats.timeSpent,
                       label: language === 'HI' ? 'समय बिताया' : 'Time spent',
-                      icon: '⏱️',
                     },
                     {
                       value: activeStudent.weeklyStats.activitiesCompleted,
                       label: language === 'HI' ? 'गतिविधियाँ' : 'Activities',
-                      icon: '✅',
                     },
                     {
                       value: activeStudent.weeklyStats.helpRequests,
                       label: language === 'HI' ? 'मदद माँगी' : 'Help asked',
-                      icon: '🙋',
                     },
                   ].map((stat, i) => (
-                    <div key={i} className="bg-surface rounded-xl p-3 text-center border border-gray-100">
-                      <p className="text-lg mb-1">{stat.icon}</p>
+                    <div key={i} className="flex-1 bg-accent/5 border border-accent/10 rounded-xl px-3 py-2.5 text-center">
                       <p className="text-base font-bold text-primary">{stat.value}</p>
                       <p className="text-xs text-muted mt-0.5 leading-tight">{stat.label}</p>
                     </div>
@@ -532,12 +684,13 @@ export default function TeacherDashboard() {
 
               {/* ── Section 4: AI Suggestion ──────────────────────────── */}
               <section>
-                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3">
-                  {language === 'HI' ? '💡 AI सुझाव' : '💡 AI Suggestion'}
+                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <Lightbulb size={14} className="text-calm" />
+                  {language === 'HI' ? 'AI सुझाव' : 'AI Suggestion'}
                 </h3>
                 <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4">
-                  <div className="flex items-start gap-2 mb-2">
-                    <span className="text-xl flex-shrink-0">💡</span>
+                  <div className="flex items-start gap-2.5 mb-2">
+                    <Lightbulb size={18} className="text-calm flex-shrink-0 mt-0.5" />
                     {editingSuggestion ? (
                       <textarea
                         value={suggestionText}
@@ -560,6 +713,7 @@ export default function TeacherDashboard() {
                     </p>
                     <button
                       onClick={() => setEditingSuggestion(prev => !prev)}
+                      aria-label={editingSuggestion ? 'Save suggestion' : 'Edit suggestion'}
                       className="text-calm text-xs font-semibold border border-calm/30 px-3 py-1 rounded-lg hover:bg-teal-100 transition-colors min-h-[32px]"
                     >
                       {editingSuggestion
@@ -572,28 +726,39 @@ export default function TeacherDashboard() {
 
               {/* ── Section 5: Recent Portfolio ───────────────────────── */}
               <section>
-                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3">
-                  {language === 'HI' ? '🎨 हालिया पोर्टफोलियो' : '🎨 Recent Portfolio'}
+                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <BookOpen size={14} className="text-warm" />
+                  {language === 'HI' ? 'हालिया पोर्टफोलियो' : 'Recent Portfolio'}
                 </h3>
-                <div className="bg-card border border-gray-100 rounded-2xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">🎤</span>
-                    <div>
-                      <p className="text-sm font-semibold text-primary">
-                        {language === 'HI' ? "मीरा का जादुई दरवाज़ा" : "Meera's Magical Door"}
-                      </p>
-                      <p className="text-xs text-muted">
-                        {language === 'HI' ? 'अभिव्यक्ति स्टूडियो — जून 2025' : 'Expression Studio — June 2025'}
-                      </p>
+                {(STUDENT_PORTFOLIO[activeStudent.id] || []).map((item, i) => {
+                  const PortIcon = portfolioIcon[item.type] || BookOpen;
+                  return (
+                    <div key={i} className="bg-card border border-gray-100 rounded-2xl p-4 mb-3">
+                      <div className="flex items-center gap-2.5 mb-2">
+                        <PortIcon size={18} className="text-warm flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-primary">
+                            {language === 'HI' ? item.titleHI : item.titleEN}
+                          </p>
+                          <p className="text-xs text-muted">
+                            {language === 'HI' ? item.dateHI : item.dateEN}
+                          </p>
+                        </div>
+                      </div>
+                      <textarea
+                        rows={2}
+                        placeholder={language === 'HI' ? 'यहाँ अपनी टिप्पणी लिखें...' : 'Add your notes here...'}
+                        className="w-full text-xs text-primary border border-gray-200 rounded-lg p-2 focus:border-calm focus:outline-none resize-none mt-1"
+                        aria-label={`Teacher comment on ${language === 'HI' ? item.titleHI : item.titleEN}`}
+                      />
                     </div>
-                  </div>
-                  <textarea
-                    rows={2}
-                    placeholder={language === 'HI' ? 'यहाँ अपनी टिप्पणी लिखें...' : 'Add your notes here...'}
-                    className="w-full text-xs text-primary border border-gray-200 rounded-lg p-2 focus:border-calm focus:outline-none resize-none mt-1"
-                    aria-label="Teacher comment on portfolio item"
-                  />
-                </div>
+                  );
+                })}
+                {!(STUDENT_PORTFOLIO[activeStudent.id]?.length) && (
+                  <p className="text-xs text-muted italic">
+                    {language === 'HI' ? 'अभी कोई पोर्टफोलियो आइटम नहीं' : 'No portfolio items yet'}
+                  </p>
+                )}
               </section>
 
               {/* ── Bottom CTA ────────────────────────────────────────── */}

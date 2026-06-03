@@ -3,7 +3,7 @@
 // All pages are imported and routed here. No separate context file.
 
 import { createContext, useContext, useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 // Page imports
 import Splash from './pages/Splash';
@@ -32,20 +32,43 @@ const defaultState = {
   // Student profile
   studentName: 'Arjun',          // pre-filled for demo
   studentClass: 4,
-  sldType: 'dyslexia',
-  language: 'EN',                 // 'EN' | 'HI'
+  sldType: null,                 // null until screening determines it
+  language: 'EN',                // 'EN' | 'HI'
   companion: { id: 'owl', emoji: '🦉', nickname: 'Gyaan' },
 
   // Demo flags
-  isDemoMode: true,
+  isDemoMode: true,              // when true, screening is tuned toward dyslexia for demo walkthrough
   showOfflineBanner: true,
   streakDays: 4,
+
+  // Screening results (stored for teacher dashboard reference)
+  screeningResults: null,
+
+  // Activity progress tracking
+  activitiesCompleted: {
+    reading: 0,
+    maths: 0,
+    expression: 0,
+  },
 
   // Teacher state
   teacherLoggedIn: false,
   teacherName: 'Ms. Lata',
-  activeStudentId: null,          // which student's panel is open in dashboard
+  activeStudentId: null,         // which student's panel is open in dashboard
 };
+
+// ─── 404 PAGE ──────────────────────────────────────────────────────────────────
+function NotFound() {
+  return (
+    <div className="min-h-screen bg-surface flex items-center justify-center px-4">
+      <div className="text-center animate-fadeIn">
+        <h1 className="text-6xl font-bold text-primary mb-2">404</h1>
+        <p className="text-muted text-lg mb-6">Page not found</p>
+        <a href="/" className="btn-primary">Go to Home</a>
+      </div>
+    </div>
+  );
+}
 
 // ─── APP COMPONENT ─────────────────────────────────────────────────────────────
 export default function App() {
@@ -71,8 +94,16 @@ export default function App() {
     });
   };
 
+  /**
+   * Reset state to defaults — useful for starting fresh demo.
+   */
+  const resetState = () => {
+    localStorage.removeItem('saathi_state');
+    setAppState(defaultState);
+  };
+
   return (
-    <AppContext.Provider value={{ appState, updateState }}>
+    <AppContext.Provider value={{ appState, updateState, resetState }}>
       <BrowserRouter>
         <Routes>
           {/* Student journey */}
@@ -89,6 +120,9 @@ export default function App() {
           <Route path="/teacher" element={<TeacherDashboard />} />
           <Route path="/teacher/iep/:id" element={<IEPGenerator />} />
           <Route path="/teacher/resources" element={<ResourceLibrary />} />
+
+          {/* 404 catch-all */}
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </AppContext.Provider>

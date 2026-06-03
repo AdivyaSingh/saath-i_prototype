@@ -1,22 +1,24 @@
 // src/pages/ReadingRoom.jsx
 // Route: /reading-room
-// Core Dyslexia activity — Gemini-powered comprehension question.
-// Module 3 will build this page fully.
-// Placeholder: unblocks routing.
+// Core Dyslexia activity — passage reading with OpenDyslexic font,
+// word-by-word highlighting, syllable breakdown, and comprehension questions.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Pause, Volume2, BookOpen, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import {
+  Play, Pause, Volume2, BookOpen, ArrowRight, Loader2, AlertCircle,
+  Minus, Plus, Heart, Check, ChevronRight, Sparkles, RefreshCw, Home,
+  Award, HelpCircle
+} from 'lucide-react';
 import { useApp } from '../App';
 import Layout from '../components/Layout';
 import { READING_CONTENT, STRINGS } from '../data';
-import { generateComprehensionQuestion } from '../gemini';
+import { generateComprehensionQuestion, generateReadingPassage } from '../gemini';
 
-// OpenDyslexic CDN — Reading Room only
+// ── OpenDyslexic CDN — Reading Room only ────────────────────────────────────
 const DYSLEXIC_FONT_LINK = 'https://fonts.cdnfonts.com/css/opendyslexic';
 
-// Ensure font is injected once
-function injectDyslexicFont() {
+const injectDyslexicFont = () => {
   if (typeof document !== 'undefined' && !document.querySelector('#od-font')) {
     const link = document.createElement('link');
     link.id = 'od-font';
@@ -24,8 +26,9 @@ function injectDyslexicFont() {
     link.href = DYSLEXIC_FONT_LINK;
     document.head.appendChild(link);
   }
-}
+};
 
+// ── Speed presets ───────────────────────────────────────────────────────────
 const SPEEDS = [
   { label: '0.75×', value: 0.75 },
   { label: '1×', value: 1 },
@@ -40,44 +43,91 @@ export default function ReadingRoom() {
   const lang = appState.language || 'EN';
   const S = STRINGS[lang] || STRINGS.EN;
 
-  // Font injection
+  // Inject OpenDyslexic font on mount
   useEffect(() => { injectDyslexicFont(); }, []);
 
-  const passage = READING_CONTENT[0];
-  const rawText = lang === 'HI' ? passage.textHI : passage.text;
-  const words = rawText.split(' ');
-  const passageTitle = lang === 'HI' ? passage.titleHI : passage.title;
+  // ── Passage selection state ─────────────────────────────────────────────
+  // If ?easy=true, default to the lowest grade passage; otherwise show picker
+  const sortedPassages = [...READING_CONTENT].sort((a, b) => a.gradeLevel - b.gradeLevel);
+  const defaultIdx = isEasy ? 0 : null;
+  const [selectedPassageIdx, setSelectedPassageIdx] = useState(defaultIdx);
+  const [generatedPassage, setGeneratedPassage] = useState(null);
+  const [generatingPassage, setGeneratingPassage] = useState(false);
 
-  // Reading state
+  // Determine active passage (generated or static)
+  const activePassage = generatedPassage
+    ? generatedPassage
+    : selectedPassageIdx !== null
+      ? sortedPassages[selectedPassageIdx]
+      : null;
+
+  const rawText = activePassage
+    ? (lang === 'HI' && activePassage.textHI ? activePassage.textHI : activePassage.text)
+    : '';
+  const words = rawText ? rawText.split(' ') : [];
+  const passageTitle = activePassage
+    ? (lang === 'HI' && activePassage.titleHI ? activePassage.titleHI : activePassage.title)
+    : '';
+
+  // ── Reading state ─────────────────────────────────────────────────────────
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentWordIdx, setCurrentWordIdx] = useState(-1);
   const [fontSize, setFontSize] = useState(20);
   const [speed, setSpeed] = useState(1);
   const [tappedWord, setTappedWord] = useState(null);
+  const [tappedWordIdx, setTappedWordIdx] = useState(null);
   const [audioCount, setAudioCount] = useState(0);
   const intervalRef = useRef(null);
 
-  // Comprehension state
-  const [phase, setPhase] = useState('reading'); // 'reading' | 'questions' | 'complete'
-  const [answers, setAnswers] = useState({}); // qIdx → optionIdx
-  const [feedback, setFeedback] = useState({}); // qIdx → 'correct' | 'retry'
+  // ── Comprehension state ───────────────────────────────────────────────────
+  const [phase, setPhase] = useState('select'); // 'select' | 'reading' | 'questions' | 'complete'
+  const [answers, setAnswers] = useState({});
+  const [feedback, setFeedback] = useState({});
   const [aiQuestion, setAiQuestion] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(false);
   const [companionState, setCompanionState] = useState('idle');
 
-  // Build question list
-  const staticQs = passage.comprehensionQuestions.slice(0, 2).map((q, i) => ({
-    ...q,
-    source: 'static',
-    idx: i,
-  }));
+  // Reset to reading phase when a passage is selected
+  useEffect(() => {
+    if (activePassage && phase === 'select') {
+      setPhase('reading');
+    }
+  }, [activePassage]);
+
+  // If easy mode, auto-start reading
+  useEffect(() => {
+    if (isEasy && selectedPassageIdx === 0) {
+      setPhase('reading');
+    }
+  }, [isEasy, selectedPassageIdx]);
+
+  // ── Build question list ─────────────────────────────────────────────────
+  const staticQs = activePassage?.comprehensionQuestions
+    ? activePassage.comprehensionQuestions.slice(0, 2).map((q, i) => ({
+        ...q, source: 'static', idx: i,
+      }))
+    : [];
+
+  // For generated passages, questions come from the response
+  const generatedQs = generatedPassage?.questions
+    ? generatedPassage.questions.slice(0, 2).map((q, i) => ({
+        ...q, source: 'generated', idx: i,
+      }))
+    : [];
+
+  const baseQuestions = generatedPassage ? generatedQs : staticQs;
+
+  // Fallback static Q3 for when AI fails
+  const fallbackQ3 = activePassage?.comprehensionQuestions?.[2] || null;
 
   const allQuestions = aiQuestion
-    ? [...staticQs, { ...aiQuestion, source: 'ai', idx: 2 }]
-    : staticQs;
+    ? [...baseQuestions, { ...aiQuestion, source: 'ai', idx: 2 }]
+    : fallbackQ3 && aiError
+      ? [...baseQuestions, { ...fallbackQ3, source: 'static', idx: 2 }]
+      : baseQuestions;
 
-  // Word-by-word interval
+  // ── Word-by-word highlight interval ───────────────────────────────────────
   const startInterval = useCallback(() => {
     const delay = Math.round(600 / speed);
     intervalRef.current = setInterval(() => {
@@ -101,6 +151,7 @@ export default function ReadingRoom() {
     return () => clearInterval(intervalRef.current);
   }, [isPlaying, startInterval]);
 
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handlePlayPause = () => {
     if (!isPlaying && currentWordIdx >= words.length - 1) {
       setCurrentWordIdx(-1);
@@ -111,7 +162,6 @@ export default function ReadingRoom() {
     setTimeout(() => setCompanionState('idle'), 1500);
   };
 
-  // Speak a word
   const speakWord = (word) => {
     if (!window.speechSynthesis) return;
     const utter = new SpeechSynthesisUtterance(word);
@@ -120,25 +170,45 @@ export default function ReadingRoom() {
     window.speechSynthesis.speak(utter);
   };
 
-  const handleWordTap = (word) => {
-    setTappedWord(word === tappedWord ? null : word);
-    speakWord(word);
+  const handleWordTap = (word, idx) => {
+    if (tappedWordIdx === idx) {
+      setTappedWord(null);
+      setTappedWordIdx(null);
+    } else {
+      setTappedWord(word);
+      setTappedWordIdx(idx);
+      speakWord(word);
+    }
   };
 
-  // Move to comprehension phase + fetch AI Q
+  const syllableFor = (word) => {
+    if (!activePassage?.syllabledWords) return word;
+    const clean = word.replace(/[^a-zA-Z]/g, '').toLowerCase();
+    return activePassage.syllabledWords[clean] || activePassage.syllabledWords[word] || word;
+  };
+
+  // Move to comprehension + fetch AI question
   const handleFinishReading = async () => {
     setPhase('questions');
     setAiLoading(true);
     setAiError(false);
-    const q = await generateComprehensionQuestion(passage.text, lang);
+    setAnswers({});
+    setFeedback({});
+    setAiQuestion(null);
+
+    const text = activePassage?.text || rawText;
+    const q = await generateComprehensionQuestion(text, lang, activePassage?.gradeLevel || 4);
     setAiLoading(false);
-    if (q) setAiQuestion(q);
-    else setAiError(true);
+    if (q) {
+      setAiQuestion(q);
+    } else {
+      setAiError(true);
+    }
   };
 
-  // Answer a question
+  // Answer handler
   const handleAnswer = (qIdx, optionIdx, correct) => {
-    if (answers[qIdx] !== undefined) return; // already answered
+    if (answers[qIdx] !== undefined) return;
     setAnswers((prev) => ({ ...prev, [qIdx]: optionIdx }));
     const isCorrect = optionIdx === correct;
     setFeedback((prev) => ({ ...prev, [qIdx]: isCorrect ? 'correct' : 'retry' }));
@@ -146,18 +216,65 @@ export default function ReadingRoom() {
     setTimeout(() => setCompanionState('idle'), 2000);
   };
 
-  const allAnswered = allQuestions.every((q, i) => answers[i] !== undefined);
+  const allAnswered = allQuestions.length > 0 && allQuestions.every((_, i) => answers[i] !== undefined);
 
   useEffect(() => {
-    if (allAnswered && allQuestions.length > 0 && phase === 'questions') {
+    if (allAnswered && phase === 'questions') {
       const timer = setTimeout(() => setPhase('complete'), 1200);
       return () => clearTimeout(timer);
     }
-  }, [allAnswered, allQuestions.length, phase]);
+  }, [allAnswered, phase]);
 
-  const syllableFor = (word) => {
-    const clean = word.replace(/[^a-zA-Z]/g, '').toLowerCase();
-    return passage.syllabledWords?.[clean] || passage.syllabledWords?.[word] || word;
+  // Generate a new AI passage
+  const handleGeneratePassage = async () => {
+    setGeneratingPassage(true);
+    setGeneratedPassage(null);
+    const classLevel = appState.studentClass || 4;
+    const result = await generateReadingPassage(classLevel, lang);
+    setGeneratingPassage(false);
+
+    if (result) {
+      // Normalize the generated passage to match our structure
+      setGeneratedPassage({
+        id: 'generated',
+        title: result.title,
+        text: result.text,
+        gradeLevel: classLevel,
+        syllabledWords: result.syllabledWords || {},
+        comprehensionQuestions: result.questions || [],
+      });
+      setPhase('reading');
+      setCurrentWordIdx(-1);
+      setIsPlaying(false);
+      setAnswers({});
+      setFeedback({});
+      setAiQuestion(null);
+    }
+  };
+
+  // Select a static passage
+  const handleSelectPassage = (idx) => {
+    setSelectedPassageIdx(idx);
+    setGeneratedPassage(null);
+    setPhase('reading');
+    setCurrentWordIdx(-1);
+    setIsPlaying(false);
+    setAnswers({});
+    setFeedback({});
+    setAiQuestion(null);
+    setTappedWord(null);
+    setTappedWordIdx(null);
+  };
+
+  // Go back to passage selection
+  const handleBackToSelect = () => {
+    setPhase('select');
+    setSelectedPassageIdx(null);
+    setGeneratedPassage(null);
+    setCurrentWordIdx(-1);
+    setIsPlaying(false);
+    setTappedWord(null);
+    setTappedWordIdx(null);
   };
 
   return (
@@ -176,20 +293,96 @@ export default function ReadingRoom() {
         style={{ fontFamily: "'OpenDyslexic', 'Poppins', sans-serif" }}
       >
 
-        {/* ── Reading Phase ─────────────────────────────────── */}
-        {phase === 'reading' && (
-          <>
+        {/* ── Passage Selection Phase ──────────────────────────────── */}
+        {phase === 'select' && (
+          <div className="animate-fadeIn">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-3">
+                <BookOpen className="w-8 h-8 text-accent" />
+              </div>
+              <h2 className="text-xl font-bold text-primary mb-1">
+                {lang === 'HI' ? 'कहानी चुनें' : 'Choose a Story'}
+              </h2>
+              <p className="text-muted text-sm">
+                {lang === 'HI' ? 'पढ़ने के लिए एक कहानी चुनें' : 'Pick a story to read today'}
+              </p>
+            </div>
+
+            {/* Passage title cards */}
+            <div className="space-y-3 mb-5">
+              {sortedPassages.map((p, idx) => (
+                <button
+                  key={p.id}
+                  onClick={() => handleSelectPassage(idx)}
+                  className="w-full bg-card rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-4 hover:border-accent/40 hover:shadow-md transition-all text-left min-h-[72px] group"
+                  aria-label={`Read ${lang === 'HI' && p.titleHI ? p.titleHI : p.title}`}
+                >
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent/10 to-primary/10 flex items-center justify-center flex-shrink-0 group-hover:from-accent/20 group-hover:to-primary/20 transition-colors">
+                    <BookOpen className="w-5 h-5 text-accent" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-primary font-semibold text-base truncate">
+                      {lang === 'HI' && p.titleHI ? p.titleHI : p.title}
+                    </p>
+                    <p className="text-muted text-xs mt-0.5">
+                      {lang === 'HI'
+                        ? `कक्षा ${p.gradeLevel} • ${(lang === 'HI' && p.textHI ? p.textHI : p.text).split(' ').length} शब्द`
+                        : `Grade ${p.gradeLevel} • ${p.text.split(' ').length} words`}
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-muted flex-shrink-0 group-hover:text-accent transition-colors" />
+                </button>
+              ))}
+            </div>
+
+            {/* Generate new passage button */}
+            <button
+              onClick={handleGeneratePassage}
+              disabled={generatingPassage}
+              className="w-full bg-gradient-to-r from-accent to-primary text-white py-3 rounded-xl font-semibold min-h-[48px] flex items-center justify-center gap-2 shadow-sm hover:opacity-90 transition-opacity disabled:opacity-60"
+              aria-label="Generate a new passage with AI"
+            >
+              {generatingPassage ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  {lang === 'HI' ? 'नई कहानी बन रही है...' : 'Creating your story...'}
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5" />
+                  {lang === 'HI' ? 'AI से नई कहानी बनाएं' : 'Generate New Passage'}
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* ── Reading Phase ─────────────────────────────────────── */}
+        {phase === 'reading' && activePassage && (
+          <div className="animate-fadeIn">
             {/* Story title card */}
             <div className="bg-gradient-to-r from-accent/10 to-primary/10 rounded-2xl p-4 mb-4 flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0">
                 <BookOpen className="w-6 h-6 text-accent" />
               </div>
-              <div>
-                <h1 className="text-lg font-bold text-primary">{passageTitle}</h1>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-lg font-bold text-primary truncate">{passageTitle}</h1>
                 <p className="text-muted text-sm">
-                  {lang === 'HI' ? `${words.length} शब्द • कक्षा ${passage.gradeLevel}` : `${words.length} words • Grade ${passage.gradeLevel}`}
+                  {lang === 'HI'
+                    ? `${words.length} शब्द • कक्षा ${activePassage.gradeLevel || appState.studentClass}`
+                    : `${words.length} words • Grade ${activePassage.gradeLevel || appState.studentClass}`}
                 </p>
               </div>
+              {/* Back to passage picker */}
+              {!isEasy && (
+                <button
+                  onClick={handleBackToSelect}
+                  className="text-muted text-xs underline underline-offset-2 hover:text-accent transition-colors flex-shrink-0"
+                  aria-label="Change passage"
+                >
+                  {lang === 'HI' ? 'बदलें' : 'Change'}
+                </button>
+              )}
             </div>
 
             {/* Controls row */}
@@ -197,7 +390,7 @@ export default function ReadingRoom() {
               {/* Play/pause */}
               <button
                 onClick={handlePlayPause}
-                className="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-xl min-h-[48px] font-semibold text-sm shadow-sm hover:bg-blue-700 transition-colors flex-shrink-0"
+                className="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-xl min-h-[48px] font-semibold text-sm shadow-sm hover:opacity-90 transition-opacity flex-shrink-0"
                 aria-label={isPlaying ? 'Pause reading' : 'Play reading'}
               >
                 {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
@@ -206,13 +399,17 @@ export default function ReadingRoom() {
                   : (lang === 'HI' ? 'सुनें' : 'Play')}
               </button>
 
-              {/* Speed */}
+              {/* Speed selector */}
               <div className="flex rounded-xl overflow-hidden border border-gray-200 min-h-[48px]">
                 {SPEEDS.map((s) => (
                   <button
                     key={s.value}
                     onClick={() => setSpeed(s.value)}
-                    className={`px-3 text-sm font-medium min-h-[48px] transition-colors ${speed === s.value ? 'bg-accent text-white' : 'bg-card text-muted hover:bg-surface'}`}
+                    className={`px-3 text-sm font-medium min-h-[48px] transition-colors ${
+                      speed === s.value
+                        ? 'bg-accent text-white'
+                        : 'bg-card text-muted hover:bg-surface'
+                    }`}
                     aria-label={`Speed ${s.label}`}
                   >
                     {s.label}
@@ -220,36 +417,44 @@ export default function ReadingRoom() {
                 ))}
               </div>
 
-              {/* Font size */}
+              {/* Font size controls with Lucide icons */}
               <div className="flex items-center gap-1 ml-auto">
                 <button
                   onClick={() => setFontSize((f) => Math.max(18, f - 2))}
-                  className="w-10 h-10 rounded-lg border border-gray-200 bg-card text-muted font-bold text-sm flex items-center justify-center hover:bg-surface transition-colors min-h-[48px]"
+                  className="w-10 h-10 rounded-lg border border-gray-200 bg-card text-muted flex items-center justify-center hover:bg-surface transition-colors min-h-[48px]"
                   aria-label="Decrease font size"
-                >A-</button>
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <span className="text-xs text-muted font-medium w-6 text-center">{fontSize}</span>
                 <button
                   onClick={() => setFontSize((f) => Math.min(28, f + 2))}
-                  className="w-10 h-10 rounded-lg border border-gray-200 bg-card text-muted font-bold text-lg flex items-center justify-center hover:bg-surface transition-colors min-h-[48px]"
+                  className="w-10 h-10 rounded-lg border border-gray-200 bg-card text-muted flex items-center justify-center hover:bg-surface transition-colors min-h-[48px]"
                   aria-label="Increase font size"
-                >A+</button>
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
-            {/* Passage */}
+            {/* Passage text with word-by-word highlighting */}
             <div className="bg-card rounded-2xl shadow-sm p-5 border border-gray-100 mb-4 leading-loose">
               <p style={{ fontSize: `${fontSize}px`, lineHeight: '2', letterSpacing: '0.04em' }}>
                 {words.map((word, idx) => (
                   <span key={idx}>
                     <span
-                      onClick={() => handleWordTap(word)}
-                      className={`cursor-pointer rounded px-0.5 transition-colors duration-100 ${
+                      onClick={() => handleWordTap(word, idx)}
+                      className={`cursor-pointer rounded px-0.5 transition-colors duration-150 ${
                         idx === currentWordIdx
-                          ? 'bg-yellow-200'
-                          : tappedWord === word
-                          ? 'bg-orange-100'
-                          : 'hover:bg-blue-50'
+                          ? 'bg-yellow-200/70 rounded'
+                          : tappedWordIdx === idx
+                          ? 'bg-warm/15 rounded'
+                          : 'hover:bg-accent/5'
                       }`}
+                      role="button"
+                      tabIndex={0}
                       aria-label={`Word: ${word}`}
+                      onKeyDown={(e) => e.key === 'Enter' && handleWordTap(word, idx)}
                     >
                       {word}
                     </span>
@@ -259,20 +464,23 @@ export default function ReadingRoom() {
               </p>
             </div>
 
-            {/* Syllable card */}
+            {/* Syllable breakdown card — appears below the passage */}
             {tappedWord && (
-              <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 mb-4 flex items-center gap-4">
+              <div className="bg-warm/5 border border-warm/20 rounded-2xl p-4 mb-4 flex items-center gap-4 animate-slideUp">
                 <div className="flex-1">
                   <p className="text-muted text-xs mb-1">
                     {lang === 'HI' ? 'अक्षर-विभाजन' : 'Syllable breakdown'}
                   </p>
-                  <p className="text-primary font-bold text-2xl tracking-widest" style={{ fontFamily: "'OpenDyslexic', sans-serif" }}>
+                  <p
+                    className="text-primary font-bold text-2xl tracking-widest"
+                    style={{ fontFamily: "'OpenDyslexic', sans-serif" }}
+                  >
                     {syllableFor(tappedWord)}
                   </p>
                 </div>
                 <button
                   onClick={() => speakWord(tappedWord)}
-                  className="w-12 h-12 rounded-xl bg-warm/20 text-warm flex items-center justify-center hover:bg-warm/30 transition-colors min-h-[48px]"
+                  className="w-12 h-12 rounded-xl bg-warm/15 text-warm flex items-center justify-center hover:bg-warm/25 transition-colors min-h-[48px]"
                   aria-label={`Hear word: ${tappedWord}`}
                 >
                   <Volume2 className="w-5 h-5" />
@@ -283,24 +491,30 @@ export default function ReadingRoom() {
             {/* Finish reading CTA */}
             <button
               onClick={handleFinishReading}
-              className="w-full bg-warm text-white py-3 rounded-xl font-semibold min-h-[48px] flex items-center justify-center gap-2 shadow-sm hover:bg-orange-600 transition-colors"
+              className="w-full bg-warm text-white py-3 rounded-xl font-semibold min-h-[48px] flex items-center justify-center gap-2 shadow-sm hover:opacity-90 transition-opacity"
+              aria-label="Finish reading and answer questions"
             >
               {lang === 'HI' ? 'पढ़ना हो गया! सवालों पर जाएं' : "Done reading! Answer questions"}
               <ArrowRight className="w-5 h-5" />
             </button>
 
-            <p className="text-center text-muted text-xs mt-3">
-              {lang === 'HI' ? '💡 किसी भी शब्द पर टैप करें — उसे सुनें और समझें' : '💡 Tap any word to hear it and see its syllables'}
+            <p className="text-center text-muted text-xs mt-3 flex items-center justify-center gap-1.5">
+              <HelpCircle className="w-3.5 h-3.5" />
+              {lang === 'HI'
+                ? 'किसी भी शब्द पर टैप करें — उसे सुनें और समझें'
+                : 'Tap any word to hear it and see its syllables'}
             </p>
-          </>
+          </div>
         )}
 
-        {/* ── Questions Phase ────────────────────────────────── */}
+        {/* ── Questions Phase ──────────────────────────────────── */}
         {phase === 'questions' && (
-          <>
+          <div className="animate-fadeIn">
             <div className="mb-5 text-center">
-              <span className="text-3xl">🤔</span>
-              <h2 className="text-xl font-bold text-primary mt-2">
+              <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-3">
+                <HelpCircle className="w-7 h-7 text-accent" />
+              </div>
+              <h2 className="text-xl font-bold text-primary">
                 {lang === 'HI' ? 'आपने क्या समझा?' : 'What did you understand?'}
               </h2>
               <p className="text-muted text-sm mt-1">
@@ -308,9 +522,9 @@ export default function ReadingRoom() {
               </p>
             </div>
 
-            <div className="space-y-6">
-              {/* Static Qs */}
-              {staticQs.map((q, qIdx) => (
+            <div className="space-y-5">
+              {/* Static / base questions */}
+              {baseQuestions.map((q, qIdx) => (
                 <QuestionCard
                   key={qIdx}
                   q={q}
@@ -322,7 +536,7 @@ export default function ReadingRoom() {
                 />
               ))}
 
-              {/* AI Q */}
+              {/* AI question loading state */}
               {aiLoading && (
                 <div className="bg-card rounded-2xl border border-gray-100 p-6 flex flex-col items-center gap-3">
                   <Loader2 className="w-8 h-8 text-accent animate-spin" />
@@ -331,17 +545,35 @@ export default function ReadingRoom() {
                   </p>
                 </div>
               )}
-              {aiError && (
-                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 flex items-center gap-3">
+
+              {/* AI error state */}
+              {aiError && !aiQuestion && fallbackQ3 && (
+                <QuestionCard
+                  q={fallbackQ3}
+                  qIdx={2}
+                  answers={answers}
+                  feedback={feedback}
+                  lang={lang}
+                  onAnswer={handleAnswer}
+                />
+              )}
+              {aiError && !fallbackQ3 && (
+                <div className="bg-warm/5 border border-warm/20 rounded-2xl p-4 flex items-center gap-3">
                   <AlertCircle className="w-5 h-5 text-warm flex-shrink-0" />
                   <p className="text-primary text-sm">
                     {lang === 'HI' ? 'AI सवाल नहीं बना सका। आगे बढ़ें!' : 'AI question unavailable. Move on!'}
                   </p>
                 </div>
               )}
+
+              {/* AI-generated question */}
               {aiQuestion && (
                 <QuestionCard
-                  q={{ question: aiQuestion.question, options: aiQuestion.options.map((text) => ({ text, emoji: '💬' })), correct: aiQuestion.correct }}
+                  q={{
+                    question: aiQuestion.question,
+                    options: aiQuestion.options.map((text) => ({ text })),
+                    correct: aiQuestion.correct,
+                  }}
                   qIdx={2}
                   answers={answers}
                   feedback={feedback}
@@ -352,58 +584,82 @@ export default function ReadingRoom() {
               )}
             </div>
 
+            {/* All answered confirmation */}
             {allAnswered && (
-              <div className="mt-6 text-center">
-                <p className="text-success font-semibold text-base mb-3">
-                  {lang === 'HI' ? 'शाबाश! सभी सवाल पूरे हुए 🌟' : 'Well done! All questions complete 🌟'}
+              <div className="mt-5 text-center animate-slideUp">
+                <p className="text-success font-semibold text-base flex items-center justify-center gap-2">
+                  <Check className="w-5 h-5" />
+                  {lang === 'HI' ? 'शाबाश! सभी सवाल पूरे हुए' : 'Well done! All questions complete'}
                 </p>
               </div>
             )}
-          </>
+          </div>
         )}
 
-        {/* ── Complete Phase ────────────────────────────────── */}
+        {/* ── Completion Phase ─────────────────────────────────── */}
         {phase === 'complete' && (
-          <div className="bg-gradient-to-r from-accent to-primary text-white rounded-2xl p-6 text-center">
-            <div className="text-4xl mb-3">📚</div>
-            <h2 className="text-2xl font-bold mb-2">
-              {lang === 'HI'
-                ? `आपने आज ${words.length} शब्द पढ़े!`
-                : `You read ${words.length} words today!`}
-            </h2>
-            <p className="text-white/80 text-base mb-2">
-              {lang === 'HI'
-                ? `आपने ${audioCount} बार Read-Along सहायता ली — यह एक स्मार्ट लर्निंग टूल है!`
-                : `You used the read-along helper ${audioCount} time${audioCount !== 1 ? 's' : ''} — that's a smart learning tool!`}
-            </p>
-            <p className="text-white/70 text-sm mb-6">
-              {lang === 'HI' ? '🦉 Gyaan को आप पर गर्व है!' : `🦉 ${appState.companion?.nickname || 'Gyaan'} is so proud of you!`}
-            </p>
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => navigate('/home')}
-                className="w-full bg-white text-primary py-3 rounded-xl font-semibold min-h-[48px] hover:bg-gray-50 transition-colors"
-              >
-                {lang === 'HI' ? '← घर जाएं' : '← Back to Home'}
-              </button>
-              <button
-                onClick={() => navigate('/achievements')}
-                className="w-full bg-white/20 text-white py-3 rounded-xl font-semibold min-h-[48px] hover:bg-white/30 transition-colors"
-              >
-                {lang === 'HI' ? '🏆 उपलब्धियाँ देखें' : '🏆 See My Achievements'}
-              </button>
+          <div className="animate-slideUp">
+            <div className="bg-gradient-to-br from-accent via-primary to-accent text-white rounded-2xl p-6 text-center shadow-lg">
+              <div className="w-16 h-16 rounded-2xl bg-white/15 flex items-center justify-center mx-auto mb-4">
+                <Award className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">
+                {lang === 'HI'
+                  ? `आपने आज ${words.length} शब्द पढ़े!`
+                  : `You read ${words.length} words today!`}
+              </h2>
+              <p className="text-white/80 text-base mb-2">
+                {lang === 'HI'
+                  ? `आपने ${audioCount} बार Read-Along सहायता ली — यह एक स्मार्ट लर्निंग टूल है!`
+                  : `You used the read-along helper ${audioCount} time${audioCount !== 1 ? 's' : ''} — that's a smart learning tool!`}
+              </p>
+              <p className="text-white/70 text-sm mb-6">
+                {lang === 'HI'
+                  ? `${appState.companion?.nickname || 'Gyaan'} को आप पर गर्व है!`
+                  : `${appState.companion?.nickname || 'Gyaan'} is so proud of you!`}
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => navigate('/home')}
+                  className="w-full bg-white text-primary py-3 rounded-xl font-semibold min-h-[48px] hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
+                  aria-label="Back to home"
+                >
+                  <Home className="w-4 h-4" />
+                  {lang === 'HI' ? 'घर जाएं' : 'Back to Home'}
+                </button>
+                <button
+                  onClick={() => {
+                    handleBackToSelect();
+                  }}
+                  className="w-full bg-white/15 text-white py-3 rounded-xl font-semibold min-h-[48px] hover:bg-white/25 transition-colors flex items-center justify-center gap-2"
+                  aria-label="Read another story"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  {lang === 'HI' ? 'और कहानी पढ़ें' : 'Read Another Story'}
+                </button>
+                <button
+                  onClick={() => navigate('/achievements')}
+                  className="w-full bg-white/15 text-white py-3 rounded-xl font-semibold min-h-[48px] hover:bg-white/25 transition-colors flex items-center justify-center gap-2"
+                  aria-label="See achievements"
+                >
+                  <Award className="w-4 h-4" />
+                  {lang === 'HI' ? 'उपलब्धियाँ देखें' : 'See My Achievements'}
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* ── Persistent struggling button ─────────────────── */}
-        {phase !== 'complete' && (
+        {/* ── Persistent "I need help" button ──────────────────── */}
+        {phase !== 'complete' && phase !== 'select' && (
           <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-4 z-30 pointer-events-none">
             <button
               onClick={() => navigate('/home')}
-              className="pointer-events-auto bg-warm text-white rounded-xl px-5 py-2 min-h-[48px] text-sm font-semibold shadow-lg hover:bg-orange-600 transition-colors"
+              className="pointer-events-auto bg-warm/90 backdrop-blur-sm text-white rounded-xl px-5 py-2 min-h-[48px] text-sm font-semibold shadow-lg hover:bg-warm transition-colors flex items-center gap-2"
+              aria-label="I need help"
             >
-              😰 {S.iAmStruggling}
+              <Heart className="w-4 h-4" />
+              {S.iAmStruggling}
             </button>
           </div>
         )}
@@ -412,16 +668,25 @@ export default function ReadingRoom() {
   );
 }
 
-// ── Question card sub-component ─────────────────────────────────────────
-function QuestionCard({ q, qIdx, answers, feedback, lang, onAnswer, isAI = false }) {
+// ── Question Card sub-component ─────────────────────────────────────────────
+const QuestionCard = ({ q, qIdx, answers, feedback, lang, onAnswer, isAI = false }) => {
   const answered = answers[qIdx] !== undefined;
   const fb = feedback[qIdx];
 
   return (
-    <div className="bg-card rounded-2xl shadow-sm p-4 border border-gray-100">
+    <div
+      className={`bg-card rounded-2xl shadow-sm p-4 border-2 transition-colors ${
+        answered && fb === 'correct'
+          ? 'border-success/30 bg-success/5'
+          : answered && fb === 'retry'
+          ? 'border-warm/30 bg-warm/5'
+          : 'border-gray-100'
+      }`}
+    >
       {isAI && (
-        <span className="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full font-medium mb-2 inline-block">
-          ✨ {lang === 'HI' ? 'AI प्रश्न' : 'AI Question'}
+        <span className="text-xs bg-accent/10 text-accent px-2.5 py-0.5 rounded-full font-medium mb-2 inline-flex items-center gap-1">
+          <Sparkles className="w-3 h-3" />
+          {lang === 'HI' ? 'AI प्रश्न' : 'AI Question'}
         </span>
       )}
       <p className="text-primary font-semibold text-lg leading-snug mb-4">
@@ -429,36 +694,61 @@ function QuestionCard({ q, qIdx, answers, feedback, lang, onAnswer, isAI = false
       </p>
       <div className="grid grid-cols-2 gap-3">
         {q.options.map((opt, optIdx) => {
+          const optText = typeof opt === 'string' ? opt : opt.text;
           const isSelected = answers[qIdx] === optIdx;
           const isCorrect = optIdx === q.correct;
-          let tileClass = 'bg-card border-gray-100 hover:bg-surface hover:border-accent';
-          if (answered && isSelected && fb === 'correct') tileClass = 'bg-green-50 border-success';
-          if (answered && isSelected && fb === 'retry') tileClass = 'bg-orange-50 border-warm';
-          if (answered && !isSelected && isCorrect && fb === 'retry') tileClass = 'bg-green-50 border-success opacity-80';
+
+          let tileClass = 'bg-card border-gray-200 hover:bg-surface hover:border-accent/40';
+          if (answered && isSelected && fb === 'correct') {
+            tileClass = 'bg-success/10 border-success';
+          }
+          if (answered && isSelected && fb === 'retry') {
+            tileClass = 'bg-warm/10 border-warm';
+          }
+          if (answered && !isSelected && isCorrect && fb === 'retry') {
+            tileClass = 'bg-success/10 border-success/60';
+          }
 
           return (
             <button
               key={optIdx}
               onClick={() => onAnswer(qIdx, optIdx, q.correct)}
               disabled={answered}
-              className={`min-h-[80px] rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 p-2 transition-all ${tileClass} ${answered ? 'cursor-default' : 'cursor-pointer'}`}
-              aria-label={typeof opt === 'string' ? opt : opt.text}
+              className={`min-h-[64px] rounded-xl border-2 flex items-center justify-center gap-2 p-3 transition-all ${tileClass} ${
+                answered ? 'cursor-default' : 'cursor-pointer'
+              }`}
+              aria-label={optText}
             >
-              <span className="text-2xl">{typeof opt === 'string' ? '💬' : opt.emoji}</span>
+              {/* Show check icon for correct answer after answering */}
+              {answered && isCorrect && fb === 'correct' && isSelected && (
+                <Check className="w-4 h-4 text-success flex-shrink-0" />
+              )}
+              {answered && isCorrect && fb === 'retry' && !isSelected && (
+                <Check className="w-4 h-4 text-success flex-shrink-0" />
+              )}
               <span className="text-primary font-medium text-sm text-center leading-tight">
-                {typeof opt === 'string' ? opt : opt.text}
+                {optText}
               </span>
             </button>
           );
         })}
       </div>
       {answered && (
-        <p className={`text-sm font-medium mt-3 text-center ${fb === 'correct' ? 'text-success' : 'text-warm'}`}>
-          {fb === 'correct'
-            ? (lang === 'HI' ? '🌟 बिल्कुल सही!' : '🌟 You got it!')
-            : (lang === 'HI' ? '👍 अच्छी कोशिश! देखो सही जवाब।' : '👍 Good try! See the correct answer.')}
+        <p className={`text-sm font-medium mt-3 text-center flex items-center justify-center gap-1.5 ${
+          fb === 'correct' ? 'text-success' : 'text-warm'
+        }`}>
+          {fb === 'correct' ? (
+            <>
+              <Check className="w-4 h-4" />
+              {lang === 'HI' ? 'बिल्कुल सही!' : 'You got it!'}
+            </>
+          ) : (
+            <>
+              {lang === 'HI' ? 'अच्छी कोशिश! देखो सही जवाब।' : 'Good try! See the correct answer.'}
+            </>
+          )}
         </p>
       )}
     </div>
   );
-}
+};

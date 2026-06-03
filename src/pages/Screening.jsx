@@ -1,175 +1,367 @@
 // src/pages/Screening.jsx
 // Route: /screening
-// 3 mini-games that identify SLD type. Always framed as games, never as tests.
-// Module 2 will build this page fully.
-// Placeholder: unblocks routing.
+// 3 screening activities that identify SLD type through real behavioral tracking.
+// Always framed as games, never as tests. No scores/timers visible to the student.
 
-// src/pages/Screening.jsx
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Volume2 } from 'lucide-react';
+import {
+  Volume2,
+  ArrowRight,
+  CheckCircle2,
+  Circle,
+  Sparkles,
+  Play,
+  Target,
+  Hand,
+} from 'lucide-react';
 import { useApp } from '../App';
-import { STRINGS } from '../data';
+import {
+  STRINGS,
+  SCREENING_WORD_SETS,
+  SCREENING_PILE_ROUNDS,
+  SCREENING_TRACE_PATHS,
+} from '../data';
 import Layout from '../components/Layout';
 
-// ─── Rhyming game data ────────────────────────────────────────────────────────
-const RHYME_ROUNDS = [
-  [
-    { word: 'CAT',  emoji: '🐱', audio: 'cat' },
-    { word: 'BAT',  emoji: '🦇', audio: 'bat' },
-    { word: 'DOG',  emoji: '🐶', audio: 'dog' },
-  ],
-  [
-    { word: 'HAT',  emoji: '🎩', audio: 'hat' },
-    { word: 'MAT',  emoji: '🧺', audio: 'mat' },
-    { word: 'BUS',  emoji: '🚌', audio: 'bus' },
-  ],
-  [
-    { word: 'PIN',  emoji: '📌', audio: 'pin' },
-    { word: 'WIN',  emoji: '🏆', audio: 'win' },
-    { word: 'SUN',  emoji: '☀️', audio: 'sun' },
-  ],
-];
-// Correct rhyming pairs (indices into each round's card array)
-const RHYME_CORRECT = [[0, 1], [0, 1], [0, 1]];
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const TOTAL_ACTIVITIES = 3;
 
-// ─── Pile comparison data ─────────────────────────────────────────────────────
-const PILE_ROUNDS = [
-  { left: 3,  right: 7, answer: 'right' },
-  { left: 6,  right: 8, answer: 'right' },
-  { left: 5,  right: 6, answer: 'right' },
-];
+// Scoring weights
+const DYSLEXIA_WEIGHTS = { errorRate: 0.4, audioReliance: 0.3, responseSlowness: 0.3 };
+const DYSCALCULIA_WEIGHTS = { errorRate: 0.5, closeNumberError: 0.3, responseTime: 0.2 };
+const DYSGRAPHIA_WEIGHTS = { deviation: 0.4, jitter: 0.35, incompletion: 0.25 };
 
-// ─── Bezier path for canvas trace (cubic, 320×180 canvas) ────────────────────
-const BEZIER = {
-  p0: { x: 44,  y: 142 }, // owl start
-  p1: { x: 118, y: 28  }, // control 1
-  p2: { x: 202, y: 162 }, // control 2
-  p3: { x: 278, y: 42  }, // star end
-};
+// Tracing tolerance thresholds (in pixels, on a 400×250 canvas)
+const TRACE_GREEN = 15;
+const TRACE_YELLOW = 25;
 
-function sampleBezier(n = 200) {
-  const pts = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const mt = 1 - t;
-    pts.push({
-      x: mt*mt*mt*BEZIER.p0.x + 3*mt*mt*t*BEZIER.p1.x + 3*mt*t*t*BEZIER.p2.x + t*t*t*BEZIER.p3.x,
-      y: mt*mt*mt*BEZIER.p0.y + 3*mt*mt*t*BEZIER.p1.y + 3*mt*t*t*BEZIER.p2.y + t*t*t*BEZIER.p3.y,
-    });
-  }
-  return pts;
-}
-
-function minDistToPath(pt, pathPts) {
-  return pathPts.reduce((min, pp) => {
-    const d = Math.hypot(pt.x - pp.x, pt.y - pp.y);
-    return d < min ? d : min;
-  }, Infinity);
-}
-
-function computeTraceScore(drawn) {
-  if (drawn.length < 3) return 0;
-  const path = sampleBezier(200);
-  let onPath = 0;
-  for (const p of drawn) {
-    if (minDistToPath(p, path) <= 22) onPath++;
-  }
-  return Math.round((onPath / drawn.length) * 100);
-}
-
-// ─── Canvas drawing helpers ───────────────────────────────────────────────────
-function drawGuidePath(ctx, userPoints, done) {
-  const { width, height } = ctx.canvas;
-  ctx.clearRect(0, 0, width, height);
-
-  // Background
-  ctx.fillStyle = '#EFF6FF'; // blue-50
-  ctx.fillRect(0, 0, width, height);
-
-  // Dotted guide path
-  ctx.save();
-  ctx.setLineDash([10, 7]);
-  ctx.strokeStyle = '#93C5FD'; // blue-300
-  ctx.lineWidth = 5;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(BEZIER.p0.x, BEZIER.p0.y);
-  ctx.bezierCurveTo(BEZIER.p1.x, BEZIER.p1.y, BEZIER.p2.x, BEZIER.p2.y, BEZIER.p3.x, BEZIER.p3.y);
-  ctx.stroke();
-  ctx.restore();
-
-  // Start glow circle
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(BEZIER.p0.x, BEZIER.p0.y, 16, 0, Math.PI * 2);
-  ctx.fillStyle = done ? '#2E8B57' : '#E87722';
-  ctx.globalAlpha = 0.25;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.restore();
-
-  // End glow circle
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(BEZIER.p3.x, BEZIER.p3.y, 16, 0, Math.PI * 2);
-  ctx.fillStyle = done ? '#2E8B57' : '#FBBF24';
-  ctx.globalAlpha = 0.25;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.restore();
-
-  // Emojis — use text since canvas doesn't reliably draw SVG emoji everywhere
-  ctx.font = '26px serif';
-  ctx.fillText('🦉', BEZIER.p0.x - 20, BEZIER.p0.y + 8);
-  ctx.fillText('⭐', BEZIER.p3.x - 14, BEZIER.p3.y + 8);
-
-  // User trace
-  if (userPoints.length > 1) {
-    ctx.save();
-    ctx.setLineDash([]);
-    ctx.strokeStyle = done ? '#2E8B57' : '#E87722';
-    ctx.lineWidth = 4;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    ctx.moveTo(userPoints[0].x, userPoints[0].y);
-    for (let i = 1; i < userPoints.length; i++) {
-      ctx.lineTo(userPoints[i].x, userPoints[i].y);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
-}
-
-function getCanvasPos(e, canvas) {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width  / rect.width;
-  const scaleY = canvas.height / rect.height;
-  const src = e.touches ? e.touches[0] : e;
-  return {
-    x: (src.clientX - rect.left) * scaleX,
-    y: (src.clientY - rect.top)  * scaleY,
-  };
-}
+// Baseline response time thresholds (ms) — used to normalize slowness
+const RHYME_EXPECTED_MS = 5000;
+const PILE_EXPECTED_MS = 4000;
 
 // ─── SpeechSynthesis helper ───────────────────────────────────────────────────
-function speakWord(word, lang) {
+const speakWord = (word, lang) => {
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utt = new SpeechSynthesisUtterance(word);
   utt.lang = lang === 'HI' ? 'hi-IN' : 'en-IN';
   utt.rate = 0.85;
   window.speechSynthesis.speak(utt);
-}
+};
 
-// ─── deriveProfile (always dyslexia for demo) ─────────────────────────────────
-function deriveProfile() {
-  // For demo: always returns 'dyslexia' to showcase Arjun's full journey.
-  // Production would use real Bayesian Knowledge Tracing across activity signals.
-  return 'dyslexia';
-}
+// ─── Canvas path utilities ────────────────────────────────────────────────────
+// Convert normalized (0-1) path points to pixel coordinates on the canvas
+const toCanvasCoords = (points, width, height) =>
+  points.map((p) => ({ x: p.x * width, y: p.y * height }));
+
+// Sample evenly-spaced points along a polyline path for distance calculations
+const samplePolyline = (points, numSamples = 300) => {
+  if (points.length < 2) return points;
+  const sampled = [];
+  // Calculate total length
+  let totalLen = 0;
+  for (let i = 1; i < points.length; i++) {
+    totalLen += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  const stepLen = totalLen / numSamples;
+  let segIdx = 0;
+  let segProgress = 0;
+
+  for (let s = 0; s <= numSamples; s++) {
+    const targetDist = s * stepLen;
+    let accumulated = 0;
+    let placed = false;
+
+    for (let i = 1; i < points.length; i++) {
+      const segLen = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+      if (accumulated + segLen >= targetDist) {
+        const t = segLen > 0 ? (targetDist - accumulated) / segLen : 0;
+        sampled.push({
+          x: points[i - 1].x + t * (points[i].x - points[i - 1].x),
+          y: points[i - 1].y + t * (points[i].y - points[i - 1].y),
+        });
+        placed = true;
+        break;
+      }
+      accumulated += segLen;
+    }
+    if (!placed) sampled.push(points[points.length - 1]);
+  }
+  return sampled;
+};
+
+// Minimum distance from a point to any point on the sampled path
+const minDistToPath = (pt, pathPts) =>
+  pathPts.reduce((min, pp) => {
+    const d = Math.hypot(pt.x - pp.x, pt.y - pp.y);
+    return d < min ? d : min;
+  }, Infinity);
+
+// Compute detailed trace metrics
+const computeTraceMetrics = (drawnPoints, pathPoints) => {
+  if (drawnPoints.length < 5) {
+    return { avgDeviation: 999, jitterScore: 1, completionPct: 0 };
+  }
+
+  const sampledPath = samplePolyline(pathPoints, 300);
+
+  // Average deviation from center line
+  let totalDeviation = 0;
+  for (const p of drawnPoints) {
+    totalDeviation += minDistToPath(p, sampledPath);
+  }
+  const avgDeviation = totalDeviation / drawnPoints.length;
+
+  // Jitter: average absolute angle change between consecutive segments
+  let totalAngleChange = 0;
+  let angleCount = 0;
+  for (let i = 2; i < drawnPoints.length; i++) {
+    const dx1 = drawnPoints[i - 1].x - drawnPoints[i - 2].x;
+    const dy1 = drawnPoints[i - 1].y - drawnPoints[i - 2].y;
+    const dx2 = drawnPoints[i].x - drawnPoints[i - 1].x;
+    const dy2 = drawnPoints[i].y - drawnPoints[i - 1].y;
+    const angle1 = Math.atan2(dy1, dx1);
+    const angle2 = Math.atan2(dy2, dx2);
+    let diff = Math.abs(angle2 - angle1);
+    if (diff > Math.PI) diff = 2 * Math.PI - diff;
+    totalAngleChange += diff;
+    angleCount++;
+  }
+  const avgAngleChange = angleCount > 0 ? totalAngleChange / angleCount : 0;
+  // Normalize jitter to 0-1 (pi/2 or above = max jitter)
+  const jitterScore = Math.min(avgAngleChange / (Math.PI / 2), 1);
+
+  // Completion: how far along the path did the drawn line reach?
+  // Find the closest path point index for the last drawn point
+  const lastDrawn = drawnPoints[drawnPoints.length - 1];
+  let maxPathIdx = 0;
+  let minDist = Infinity;
+  for (let i = 0; i < sampledPath.length; i++) {
+    const d = Math.hypot(lastDrawn.x - sampledPath[i].x, lastDrawn.y - sampledPath[i].y);
+    if (d < minDist) {
+      minDist = d;
+      maxPathIdx = i;
+    }
+  }
+  const completionPct = Math.min(maxPathIdx / (sampledPath.length - 1), 1);
+
+  return { avgDeviation, jitterScore, completionPct };
+};
+
+// Get canvas position from pointer/touch event
+const getCanvasPos = (e, canvas) => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const src = e.touches ? e.touches[0] : e;
+  return {
+    x: (src.clientX - rect.left) * scaleX,
+    y: (src.clientY - rect.top) * scaleY,
+  };
+};
+
+// ─── Canvas drawing function ──────────────────────────────────────────────────
+const drawCanvas = (ctx, pathPixels, userPoints, sampledPath, isDone) => {
+  const { width, height } = ctx.canvas;
+  ctx.clearRect(0, 0, width, height);
+
+  // Background
+  ctx.fillStyle = '#F8FAFC';
+  ctx.fillRect(0, 0, width, height);
+
+  // Draw subtle grid for depth
+  ctx.save();
+  ctx.strokeStyle = '#E2E8F0';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < width; x += 20) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+  for (let y = 0; y < height; y += 20) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Draw dotted guide path
+  ctx.save();
+  ctx.setLineDash([8, 6]);
+  ctx.strokeStyle = '#94A3B8';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pathPixels[0].x, pathPixels[0].y);
+  for (let i = 1; i < pathPixels.length; i++) {
+    ctx.lineTo(pathPixels[i].x, pathPixels[i].y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Start marker
+  const startPt = pathPixels[0];
+  const endPt = pathPixels[pathPixels.length - 1];
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(startPt.x, startPt.y, 12, 0, Math.PI * 2);
+  ctx.fillStyle = '#22C55E';
+  ctx.globalAlpha = 0.3;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.arc(startPt.x, startPt.y, 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#22C55E';
+  ctx.fill();
+  ctx.restore();
+
+  // "START" label
+  ctx.save();
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillStyle = '#22C55E';
+  ctx.textAlign = 'center';
+  ctx.fillText('START', startPt.x, startPt.y - 18);
+  ctx.restore();
+
+  // End marker
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(endPt.x, endPt.y, 12, 0, Math.PI * 2);
+  ctx.fillStyle = '#E87722';
+  ctx.globalAlpha = 0.3;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.arc(endPt.x, endPt.y, 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#E87722';
+  ctx.fill();
+  ctx.restore();
+
+  // "END" label
+  ctx.save();
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillStyle = '#E87722';
+  ctx.textAlign = 'center';
+  ctx.fillText('END', endPt.x, endPt.y - 18);
+  ctx.restore();
+
+  // User trace — color-coded by accuracy
+  if (userPoints.length > 1 && sampledPath.length > 0) {
+    for (let i = 1; i < userPoints.length; i++) {
+      const dist = minDistToPath(userPoints[i], sampledPath);
+      let color;
+      if (dist <= TRACE_GREEN) {
+        color = '#22C55E'; // green — accurate
+      } else if (dist <= TRACE_YELLOW) {
+        color = '#EAB308'; // yellow — slightly off
+      } else {
+        color = '#E87722'; // orange — off path
+      }
+
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.moveTo(userPoints[i - 1].x, userPoints[i - 1].y);
+      ctx.lineTo(userPoints[i].x, userPoints[i].y);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+};
+
+// ─── Profile derivation ───────────────────────────────────────────────────────
+const deriveProfile = (rhymeData, pileData, traceData, isDemoMode) => {
+  // --- Dyslexia score ---
+  const rhymeErrorRate = rhymeData.totalRounds > 0
+    ? rhymeData.incorrectRounds / rhymeData.totalRounds
+    : 0;
+  const audioReliance = rhymeData.totalRounds > 0
+    ? Math.min(rhymeData.audioUseCount / (rhymeData.totalRounds * 2), 1)
+    : 0;
+  const avgRhymeTime = rhymeData.responseTimes.length > 0
+    ? rhymeData.responseTimes.reduce((a, b) => a + b, 0) / rhymeData.responseTimes.length
+    : 0;
+  const responseSlowness = Math.min(avgRhymeTime / RHYME_EXPECTED_MS, 1);
+
+  const dyslexiaScore =
+    rhymeErrorRate * DYSLEXIA_WEIGHTS.errorRate +
+    audioReliance * DYSLEXIA_WEIGHTS.audioReliance +
+    responseSlowness * DYSLEXIA_WEIGHTS.responseSlowness;
+
+  // --- Dyscalculia score ---
+  const pileErrorRate = pileData.totalRounds > 0
+    ? pileData.incorrectRounds / pileData.totalRounds
+    : 0;
+  const closeNumberErrorRate = pileData.hardRounds > 0
+    ? pileData.hardRoundErrors / pileData.hardRounds
+    : 0;
+  const avgPileTime = pileData.responseTimes.length > 0
+    ? pileData.responseTimes.reduce((a, b) => a + b, 0) / pileData.responseTimes.length
+    : 0;
+  const pileTimeFactor = Math.min(avgPileTime / PILE_EXPECTED_MS, 1);
+
+  const dyscalculiaScore =
+    pileErrorRate * DYSCALCULIA_WEIGHTS.errorRate +
+    closeNumberErrorRate * DYSCALCULIA_WEIGHTS.closeNumberError +
+    pileTimeFactor * DYSCALCULIA_WEIGHTS.responseTime;
+
+  // --- Dysgraphia score ---
+  // Normalize deviation: 0px = 0 score, 40px+ = 1.0
+  const deviationNorm = Math.min(traceData.avgDeviation / 40, 1);
+  const jitterNorm = traceData.jitterScore; // already 0-1
+  const incompletionPenalty = 1 - traceData.completionPct;
+
+  const dysgraphiaScore =
+    deviationNorm * DYSGRAPHIA_WEIGHTS.deviation +
+    jitterNorm * DYSGRAPHIA_WEIGHTS.jitter +
+    incompletionPenalty * DYSGRAPHIA_WEIGHTS.incompletion;
+
+  // Clamp all scores to 0-1
+  let scores = {
+    dyslexiaScore: Math.min(Math.max(dyslexiaScore, 0), 1),
+    dyscalculiaScore: Math.min(Math.max(dyscalculiaScore, 0), 1),
+    dysgraphiaScore: Math.min(Math.max(dysgraphiaScore, 0), 1),
+  };
+
+  // Demo mode bias: nudge dyslexia score up to match Arjun's profile
+  if (isDemoMode) {
+    scores.dyslexiaScore = Math.min(scores.dyslexiaScore + 0.15, 1);
+  }
+
+  // Determine detected type
+  let detectedType = 'dyslexia';
+  const maxScore = Math.max(scores.dyslexiaScore, scores.dyscalculiaScore, scores.dysgraphiaScore);
+  if (maxScore === scores.dyscalculiaScore) detectedType = 'dyscalculia';
+  if (maxScore === scores.dysgraphiaScore) detectedType = 'dysgraphia';
+  // If dyslexia ties or wins, it stays as 'dyslexia'
+  if (scores.dyslexiaScore >= maxScore) detectedType = 'dyslexia';
+
+  return { ...scores, detectedType };
+};
+
+// Child-friendly profile descriptions (no clinical labels)
+const PROFILE_MESSAGES = {
+  dyslexia: {
+    EN: 'You learn best through listening and sounds',
+    HI: 'आप सुनकर और ध्वनि से सबसे अच्छा सीखते हैं',
+  },
+  dyscalculia: {
+    EN: 'You learn best with objects and visuals',
+    HI: 'आप चीज़ों और चित्रों से सबसे अच्छा सीखते हैं',
+  },
+  dysgraphia: {
+    EN: 'You express yourself best through speaking and drawing',
+    HI: 'आप बोलकर और बनाकर सबसे अच्छा व्यक्त करते हैं',
+  },
+};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Screening() {
@@ -178,130 +370,254 @@ export default function Screening() {
   const lang = appState.language;
   const S = STRINGS[lang] || STRINGS.EN;
 
-  // ── Activity progression ───────────────────────────────────────────────────
-  const [activityIndex, setActivityIndex] = useState(0); // 0,1,2,3(done)
+  // ── Activity progression ──────────────────────────────────────────────────
+  const [activityIndex, setActivityIndex] = useState(0); // 0, 1, 2, 3 (done)
   const [transitioning, setTransitioning] = useState(false);
   const [companionState, setCompanionState] = useState('idle');
 
   const advanceActivity = useCallback(() => {
     setTransitioning(true);
     setTimeout(() => {
-      setActivityIndex(i => i + 1);
+      setActivityIndex((i) => i + 1);
       setCompanionState('idle');
       setTransitioning(false);
-    }, 600);
+    }, 500);
   }, []);
 
-  // ── Activity 1: Rhyming ────────────────────────────────────────────────────
-  const [rhymeRound,    setRhymeRound]    = useState(0);
-  const [rhymeSelected, setRhymeSelected] = useState([]); // array of indices
-  const [rhymeFeedback, setRhymeFeedback] = useState(null); // null | 'correct'
+  // Brief companion state change helper
+  const flashCompanion = useCallback((state, durationMs = 1500) => {
+    setCompanionState(state);
+    setTimeout(() => setCompanionState('idle'), durationMs);
+  }, []);
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ACTIVITY 1: Word Sound Game (Dyslexia proxy)
+  // ══════════════════════════════════════════════════════════════════════════════
+  const [rhymeRound, setRhymeRound] = useState(0);
+  const [rhymeSelected, setRhymeSelected] = useState([]); // indices of selected cards
+  const [rhymeFeedback, setRhymeFeedback] = useState(null); // null | 'correct' | 'incorrect'
+  const [rhymeCorrectPair, setRhymeCorrectPair] = useState([]); // revealed correct pair indices
   const rhymeLocked = useRef(false);
+  const rhymeRoundStart = useRef(Date.now());
+
+  // Tracking data for dyslexia scoring
+  const rhymeDataRef = useRef({
+    totalRounds: SCREENING_WORD_SETS.length,
+    incorrectRounds: 0,
+    audioUseCount: 0,
+    responseTimes: [],
+  });
+
+  const handleAudioPlay = (word) => {
+    rhymeDataRef.current.audioUseCount++;
+    speakWord(word, lang);
+  };
 
   const handleRhymeTap = (idx) => {
     if (rhymeLocked.current || rhymeFeedback) return;
 
     const next = rhymeSelected.includes(idx)
-      ? rhymeSelected.filter(i => i !== idx)
-      : [...rhymeSelected, idx].slice(-2); // max 2 selected
+      ? rhymeSelected.filter((i) => i !== idx)
+      : [...rhymeSelected, idx].slice(-2);
 
     setRhymeSelected(next);
 
     if (next.length === 2) {
       rhymeLocked.current = true;
-      const [a, b] = RHYME_CORRECT[rhymeRound];
+      const responseTime = Date.now() - rhymeRoundStart.current;
+      rhymeDataRef.current.responseTimes.push(responseTime);
+
+      const round = SCREENING_WORD_SETS[rhymeRound];
+      const [a, b] = round.rhymePair;
       const isCorrect = next.includes(a) && next.includes(b);
 
       if (isCorrect) {
         setRhymeFeedback('correct');
-        setCompanionState('happy');
+        flashCompanion('happy', 1400);
         setTimeout(() => {
-          const nextRound = rhymeRound + 1;
           rhymeLocked.current = false;
           setRhymeSelected([]);
           setRhymeFeedback(null);
-          if (nextRound < RHYME_ROUNDS.length) {
+          setRhymeCorrectPair([]);
+          const nextRound = rhymeRound + 1;
+          if (nextRound < SCREENING_WORD_SETS.length) {
             setRhymeRound(nextRound);
-            setCompanionState('idle');
+            rhymeRoundStart.current = Date.now();
           } else {
             advanceActivity();
           }
-        }, 1600);
+        }, 1500);
       } else {
-        // No "wrong" — companion becomes encouraging, brief pause, then reset round
-        setCompanionState('encouraging');
+        // Incorrect — track it, show encouraging feedback, reveal correct pair
+        rhymeDataRef.current.incorrectRounds++;
+        setRhymeFeedback('incorrect');
+        setRhymeCorrectPair([a, b]);
+        flashCompanion('encouraging', 2000);
         setTimeout(() => {
           rhymeLocked.current = false;
           setRhymeSelected([]);
-          setCompanionState('idle');
-        }, 1200);
+          setRhymeFeedback(null);
+          setRhymeCorrectPair([]);
+          const nextRound = rhymeRound + 1;
+          if (nextRound < SCREENING_WORD_SETS.length) {
+            setRhymeRound(nextRound);
+            rhymeRoundStart.current = Date.now();
+          } else {
+            advanceActivity();
+          }
+        }, 2200);
       }
     }
   };
 
-  // ── Activity 2: Pile comparison ────────────────────────────────────────────
-  const [pileRound,      setPileRound]      = useState(0);
-  const [pileChosen,     setPileChosen]     = useState(null); // 'left' | 'right' | null
-  const [pileHighlight,  setPileHighlight]  = useState(false);
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ACTIVITY 2: Which Group Has More? (Dyscalculia proxy)
+  // ══════════════════════════════════════════════════════════════════════════════
+  const [pileRound, setPileRound] = useState(0);
+  const [pileChosen, setPileChosen] = useState(null); // 'left' | 'right' | null
+  const [pileFeedback, setPileFeedback] = useState(null); // null | 'correct' | 'incorrect'
+  const [pileCorrectSide, setPileCorrectSide] = useState(null);
   const pileLocked = useRef(false);
+  const pileRoundStart = useRef(Date.now());
+
+  // Randomize which display-side each pile appears on
+  const [pileSwaps] = useState(() =>
+    SCREENING_PILE_ROUNDS.map(() => Math.random() > 0.5)
+  );
+
+  // Tracking data for dyscalculia scoring
+  const pileDataRef = useRef({
+    totalRounds: SCREENING_PILE_ROUNDS.length,
+    incorrectRounds: 0,
+    hardRounds: 0,
+    hardRoundErrors: 0,
+    responseTimes: [],
+  });
+
+  // Count hard rounds on mount
+  useEffect(() => {
+    pileDataRef.current.hardRounds = SCREENING_PILE_ROUNDS.filter(
+      (r) => r.difficulty === 'hard'
+    ).length;
+  }, []);
+
+  // Reset pile round start timer when activity 2 starts
+  useEffect(() => {
+    if (activityIndex === 1) {
+      pileRoundStart.current = Date.now();
+    }
+  }, [activityIndex]);
+
+  const getPileValues = (roundIdx) => {
+    const round = SCREENING_PILE_ROUNDS[roundIdx];
+    const swapped = pileSwaps[roundIdx];
+    // displayLeft/displayRight are the counts shown on screen
+    const displayLeft = swapped ? round.right : round.left;
+    const displayRight = swapped ? round.left : round.right;
+    // The correct display side
+    const actualBigger = round.left > round.right ? 'left' : 'right';
+    const correctDisplaySide = swapped
+      ? (actualBigger === 'left' ? 'right' : 'left')
+      : actualBigger;
+    return { displayLeft, displayRight, correctDisplaySide, difficulty: round.difficulty };
+  };
 
   const handlePileTap = (side) => {
     if (pileLocked.current || pileChosen) return;
     pileLocked.current = true;
     setPileChosen(side);
 
-    const { answer } = PILE_ROUNDS[pileRound];
-    const correct = side === answer;
+    const responseTime = Date.now() - pileRoundStart.current;
+    pileDataRef.current.responseTimes.push(responseTime);
 
-    if (correct) {
-      setCompanionState('happy');
+    const { correctDisplaySide, difficulty } = getPileValues(pileRound);
+    const isCorrect = side === correctDisplaySide;
+
+    if (isCorrect) {
+      setPileFeedback('correct');
+      setPileCorrectSide(correctDisplaySide);
+      flashCompanion('happy', 1300);
       setTimeout(() => {
-        const nextRound = pileRound + 1;
         pileLocked.current = false;
         setPileChosen(null);
-        setPileHighlight(false);
-        if (nextRound < PILE_ROUNDS.length) {
+        setPileFeedback(null);
+        setPileCorrectSide(null);
+        const nextRound = pileRound + 1;
+        if (nextRound < SCREENING_PILE_ROUNDS.length) {
           setPileRound(nextRound);
-          setCompanionState('idle');
+          pileRoundStart.current = Date.now();
         } else {
           advanceActivity();
         }
       }, 1400);
     } else {
-      // Highlight the correct pile — no red, no "wrong"
-      setCompanionState('encouraging');
-      setPileHighlight(true);
+      pileDataRef.current.incorrectRounds++;
+      if (difficulty === 'hard') {
+        pileDataRef.current.hardRoundErrors++;
+      }
+      setPileFeedback('incorrect');
+      setPileCorrectSide(correctDisplaySide);
+      flashCompanion('encouraging', 1800);
       setTimeout(() => {
         pileLocked.current = false;
         setPileChosen(null);
-        setPileHighlight(false);
-        setCompanionState('idle');
-      }, 1500);
+        setPileFeedback(null);
+        setPileCorrectSide(null);
+        const nextRound = pileRound + 1;
+        if (nextRound < SCREENING_PILE_ROUNDS.length) {
+          setPileRound(nextRound);
+          pileRoundStart.current = Date.now();
+        } else {
+          advanceActivity();
+        }
+      }, 2000);
     }
   };
 
-  // ── Activity 3: Canvas trace ───────────────────────────────────────────────
-  const canvasRef     = useRef(null);
-  const isDrawingRef  = useRef(false);
-  const drawnRef      = useRef([]); // {x,y}[]
-  const [traceDone,   setTraceDone]   = useState(false);
-  const [traceScore,  setTraceScore]  = useState(0);
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ACTIVITY 3: Trace the Path (Dysgraphia proxy)
+  // ══════════════════════════════════════════════════════════════════════════════
+  const CANVAS_W = 400;
+  const CANVAS_H = 250;
 
+  const [tracePathIdx, setTracePathIdx] = useState(0);
+  const [traceDone, setTraceDone] = useState(false);
+  const [allTracesDone, setAllTracesDone] = useState(false);
+  const canvasRef = useRef(null);
+  const isDrawingRef = useRef(false);
+  const drawnRef = useRef([]);
+
+  // Accumulated trace metrics across all paths
+  const traceMetricsRef = useRef({
+    avgDeviation: 0,
+    jitterScore: 0,
+    completionPct: 0,
+    pathCount: 0,
+  });
+
+  // Current path data in pixel coordinates
+  const currentPath = SCREENING_TRACE_PATHS[tracePathIdx];
+  const pathPixels = currentPath
+    ? toCanvasCoords(currentPath.points, CANVAS_W, CANVAS_H)
+    : [];
+  const sampledPath = pathPixels.length > 1 ? samplePolyline(pathPixels, 300) : [];
+
+  // Draw the canvas whenever the activity is shown or path changes
   useEffect(() => {
-    if (activityIndex === 2) {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      drawGuidePath(ctx, [], false);
+    if (activityIndex === 2 && canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      drawCanvas(ctx, pathPixels, [], sampledPath, false);
     }
-  }, [activityIndex]);
+  }, [activityIndex, tracePathIdx]);
 
-  const redrawCanvas = useCallback((done = false) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    drawGuidePath(ctx, drawnRef.current, done);
-  }, []);
+  const redrawCanvas = useCallback(
+    (done = false) => {
+      if (!canvasRef.current) return;
+      const ctx = canvasRef.current.getContext('2d');
+      drawCanvas(ctx, pathPixels, drawnRef.current, sampledPath, done);
+    },
+    [pathPixels, sampledPath]
+  );
 
   const handlePointerDown = (e) => {
     if (traceDone) return;
@@ -324,31 +640,81 @@ export default function Screening() {
     if (!isDrawingRef.current) return;
     e.preventDefault();
     isDrawingRef.current = false;
-    if (drawnRef.current.length < 5) return; // too short — not a real trace
+    if (drawnRef.current.length < 5) return; // too short, ignore
 
-    const score = computeTraceScore(drawnRef.current);
-    setTraceScore(score);
+    // Compute metrics for this trace
+    const metrics = computeTraceMetrics(drawnRef.current, pathPixels);
+
+    // Accumulate
+    const acc = traceMetricsRef.current;
+    acc.avgDeviation =
+      (acc.avgDeviation * acc.pathCount + metrics.avgDeviation) / (acc.pathCount + 1);
+    acc.jitterScore =
+      (acc.jitterScore * acc.pathCount + metrics.jitterScore) / (acc.pathCount + 1);
+    acc.completionPct =
+      (acc.completionPct * acc.pathCount + metrics.completionPct) / (acc.pathCount + 1);
+    acc.pathCount++;
+
     setTraceDone(true);
-    setCompanionState('happy');
+    flashCompanion('happy', 1400);
     redrawCanvas(true);
   };
 
-  // ── Completion ─────────────────────────────────────────────────────────────
+  const handleNextTrace = () => {
+    const nextIdx = tracePathIdx + 1;
+    if (nextIdx < SCREENING_TRACE_PATHS.length) {
+      setTracePathIdx(nextIdx);
+      setTraceDone(false);
+      drawnRef.current = [];
+    } else {
+      setAllTracesDone(true);
+      advanceActivity();
+    }
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // COMPLETION — Derive profile and store results
+  // ══════════════════════════════════════════════════════════════════════════════
+  const [profileResult, setProfileResult] = useState(null);
+
+  useEffect(() => {
+    if (activityIndex === 3 && !profileResult) {
+      const traceData = {
+        avgDeviation: traceMetricsRef.current.avgDeviation,
+        jitterScore: traceMetricsRef.current.jitterScore,
+        completionPct: traceMetricsRef.current.completionPct,
+      };
+      const result = deriveProfile(
+        rhymeDataRef.current,
+        pileDataRef.current,
+        traceData,
+        appState.isDemoMode
+      );
+      setProfileResult(result);
+
+      // Store in app state
+      updateState({
+        sldType: result.detectedType,
+        screeningResults: {
+          dyslexiaScore: Math.round(result.dyslexiaScore * 100) / 100,
+          dyscalculiaScore: Math.round(result.dyscalculiaScore * 100) / 100,
+          dysgraphiaScore: Math.round(result.dysgraphiaScore * 100) / 100,
+          detectedType: result.detectedType,
+        },
+      });
+    }
+  }, [activityIndex]);
+
   const handleComplete = () => {
-    updateState({ sldType: deriveProfile() });
     navigate('/home');
   };
 
-  // ── Remaining games text ───────────────────────────────────────────────────
-  const remainingText = [
-    lang === 'HI' ? '2 और मिनी-गेम बाकी हैं 🎮' : '2 more mini-games to go 🎮',
-    lang === 'HI' ? '1 और मिनी-गेम बाकी है 🎮'  : '1 more mini-game to go 🎮',
-    lang === 'HI' ? 'आखिरी गेम है! 🎮'           : 'Last game! 🎮',
-  ];
-
+  // ══════════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ══════════════════════════════════════════════════════════════════════════════
   return (
     <Layout
-      title={lang === 'HI' ? 'खेलते-खेलते सीखो' : 'Play & Discover'}
+      title={S.screeningTitle}
       showBack={false}
       showCompanion
       companionState={companionState}
@@ -357,296 +723,450 @@ export default function Screening() {
       companion={appState.companion}
       streak={appState.streakDays}
     >
-      <div className={`max-w-md mx-auto px-4 py-5 pb-24 bg-surface min-h-screen transition-opacity duration-500 ${transitioning ? 'opacity-0' : 'opacity-100'}`}>
-
-        {/* ══════════════════════════════════════════════════
-            ACTIVITIES 0 / 1 / 2 — Games
-        ══════════════════════════════════════════════════ */}
+      <div
+        className={`max-w-md mx-auto pb-24 transition-opacity duration-500 ${
+          transitioning ? 'opacity-0' : 'opacity-100'
+        }`}
+      >
+        {/* ── Step indicator dots ─────────────────────────────────────────── */}
         {activityIndex < 3 && (
-          <>
-            {/* Header */}
-            <div className="mb-5 text-center">
-              <h2 className="text-2xl font-bold text-primary">{S.screeningTitle}</h2>
-              {activityIndex < 3 && (
-                <p className="text-sm text-muted mt-1 font-medium">{remainingText[activityIndex]}</p>
-              )}
+          <div className="flex items-center justify-center gap-2 mb-6">
+            {Array.from({ length: TOTAL_ACTIVITIES }).map((_, i) => (
+              <div
+                key={i}
+                className={`rounded-full transition-all duration-300 ${
+                  i === activityIndex
+                    ? 'w-8 h-3 bg-accent'
+                    : i < activityIndex
+                    ? 'w-3 h-3 bg-accent/50'
+                    : 'w-3 h-3 bg-gray-200'
+                }`}
+                aria-label={`Activity ${i + 1} ${
+                  i < activityIndex ? 'completed' : i === activityIndex ? 'current' : 'upcoming'
+                }`}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            ACTIVITY 1 — Word Sound Game (Dyslexia proxy)
+        ═══════════════════════════════════════════════════════════════════ */}
+        {activityIndex === 0 && (
+          <div className="space-y-5 animate-fadeIn">
+            {/* Instruction card */}
+            <div className="bg-card rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <Volume2 size={20} className="text-accent" />
+                <p className="text-lg font-semibold text-primary">
+                  {lang === 'HI'
+                    ? 'दो ताल मिलाने वाले शब्द चुनें'
+                    : 'Select the two words that rhyme'}
+                </p>
+              </div>
+              <p className="text-sm text-muted">
+                {lang === 'HI'
+                  ? `दौर ${rhymeRound + 1} / ${SCREENING_WORD_SETS.length}`
+                  : `Round ${rhymeRound + 1} of ${SCREENING_WORD_SETS.length}`}
+              </p>
             </div>
 
-            {/* ═══ ACTIVITY 0 — Rhyming Words ═══ */}
-            {activityIndex === 0 && (
-              <div className="space-y-5">
-                <div className="bg-card rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                  <p className="text-lg font-semibold text-primary">
-                    {lang === 'HI' ? 'दो ताल मिलाने वाले शब्द चुनो! 🎵' : 'Tap the two words that rhyme! 🎵'}
-                  </p>
-                  <p className="text-sm text-muted mt-1">
-                    {lang === 'HI'
-                      ? `दौर ${rhymeRound + 1} / ${RHYME_ROUNDS.length}`
-                      : `Round ${rhymeRound + 1} of ${RHYME_ROUNDS.length}`}
+            {/* Word cards — 2x2 grid */}
+            <div className="grid grid-cols-2 gap-3">
+              {SCREENING_WORD_SETS[rhymeRound].words.map((word, idx) => {
+                const isSelected = rhymeSelected.includes(idx);
+                const isCorrectReveal = rhymeCorrectPair.includes(idx);
+                const isFeedbackCorrect =
+                  rhymeFeedback === 'correct' &&
+                  SCREENING_WORD_SETS[rhymeRound].rhymePair.includes(idx);
+
+                let borderClass = 'border-gray-200 bg-card';
+                if (isFeedbackCorrect || isCorrectReveal) {
+                  borderClass = 'border-green-400 bg-green-50 scale-[1.02]';
+                } else if (
+                  rhymeFeedback === 'incorrect' &&
+                  rhymeSelected.includes(idx) &&
+                  !isCorrectReveal
+                ) {
+                  borderClass = 'border-warm/60 bg-orange-50/50';
+                } else if (isSelected) {
+                  borderClass = 'border-accent bg-blue-50 shadow-sm scale-[1.02]';
+                }
+
+                return (
+                  <button
+                    key={`${rhymeRound}-${word}`}
+                    onClick={() => handleRhymeTap(idx)}
+                    className={`rounded-xl border-2 p-4 flex flex-col items-center gap-3 min-h-[100px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent ${borderClass}`}
+                    aria-label={`${word} — tap to select`}
+                    aria-pressed={isSelected}
+                    disabled={!!rhymeFeedback}
+                  >
+                    <span className="text-xl font-bold text-primary tracking-wide">
+                      {word}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAudioPlay(word);
+                      }}
+                      className="p-2 rounded-full bg-surface hover:bg-accent/10 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
+                      aria-label={`Listen to ${word}`}
+                      tabIndex={-1}
+                    >
+                      <Volume2 size={18} className="text-accent" />
+                    </button>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Feedback — correct */}
+            {rhymeFeedback === 'correct' && (
+              <div
+                className="bg-green-50 border border-green-200 rounded-xl p-3 text-center animate-fadeIn"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <CheckCircle2 size={20} className="text-green-600" />
+                  <p className="text-green-700 font-semibold text-lg">
+                    {lang === 'HI' ? 'बहुत अच्छा!' : 'Great listening!'}
                   </p>
                 </div>
+              </div>
+            )}
 
-                {/* Word cards */}
-                <div className="grid grid-cols-3 gap-3">
-                  {RHYME_ROUNDS[rhymeRound].map((card, idx) => {
-                    const isSelected = rhymeSelected.includes(idx);
-                    const [a, b] = RHYME_CORRECT[rhymeRound];
-                    const isCorrectCard = rhymeFeedback === 'correct' && (idx === a || idx === b);
-
-                    return (
-                      <button
-                        key={card.word}
-                        onClick={() => handleRhymeTap(idx)}
-                        className={`rounded-2xl border-2 p-3 flex flex-col items-center gap-2 min-h-[90px] transition-all focus:outline-none focus:ring-2 focus:ring-accent font-bold text-primary ${
-                          isCorrectCard
-                            ? 'border-success bg-green-50 scale-105 shadow-md'
-                            : isSelected
-                            ? 'border-accent bg-blue-50 shadow-sm scale-[1.03]'
-                            : 'border-gray-200 bg-card hover:border-accent hover:bg-blue-50 active:scale-95'
-                        }`}
-                        aria-label={`${card.word} — tap to select`}
-                        aria-pressed={isSelected}
-                      >
-                        <span className="text-3xl">{card.emoji}</span>
-                        <span className="text-base font-bold tracking-wide">{card.word}</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); speakWord(card.word, lang); }}
-                          className="p-1.5 rounded-full bg-surface hover:bg-blue-50 transition-colors min-h-[32px] min-w-[32px] flex items-center justify-center"
-                          aria-label={`Hear ${card.word}`}
-                          tabIndex={-1}
-                        >
-                          <Volume2 size={14} className="text-accent" />
-                        </button>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Feedback message — correct only, no "wrong" ever */}
-                {rhymeFeedback === 'correct' && (
-                  <div className="bg-green-50 border border-success rounded-2xl p-3 text-center" role="status" aria-live="polite">
-                    <p className="text-success font-bold text-lg">
-                      {lang === 'HI' ? 'बहुत अच्छा! 🌟' : 'Great listening! 🌟'}
-                    </p>
-                  </div>
-                )}
-
-                {/* Encouraging companion prompt when incorrect (no text about being wrong) */}
-                {!rhymeFeedback && companionState === 'encouraging' && (
-                  <div className="bg-orange-50 border border-warm rounded-2xl p-3 text-center" role="status" aria-live="polite">
-                    <p className="text-warm font-semibold text-base">
-                      {lang === 'HI' ? `${appState.companion?.emoji || '🦉'} फिर कोशिश करो, तुम कर सकते हो!` : `${appState.companion?.emoji || '🦉'} Give it another try — you've got this!`}
-                    </p>
-                  </div>
-                )}
-
-                <p className="text-xs text-muted text-center">
-                  {lang === 'HI' ? 'ध्वनि सुनने के लिए 🔊 दबाएं' : 'Tap 🔊 on any word to hear it'}
+            {/* Feedback — incorrect (encouraging, no "wrong") */}
+            {rhymeFeedback === 'incorrect' && (
+              <div
+                className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center animate-fadeIn"
+                role="status"
+                aria-live="polite"
+              >
+                <p className="text-warm font-semibold text-base">
+                  {lang === 'HI'
+                    ? 'ये शब्द ताल मिलाते हैं — ध्यान से सुनो!'
+                    : 'These words rhyme — listen closely!'}
                 </p>
               </div>
             )}
 
-            {/* ═══ ACTIVITY 1 — Pile Comparison ═══ */}
-            {activityIndex === 1 && (
-              <div className="space-y-5">
-                <div className="bg-card rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                  <p className="text-lg font-semibold text-primary">
-                    {lang === 'HI' ? 'ज़्यादा ढेर को दबाओ! 👆' : 'Tap the bigger pile! 👆'}
-                  </p>
-                  <p className="text-sm text-muted mt-1">
-                    {lang === 'HI'
-                      ? `दौर ${pileRound + 1} / ${PILE_ROUNDS.length}`
-                      : `Round ${pileRound + 1} of ${PILE_ROUNDS.length}`}
-                  </p>
-                </div>
-
-                {/* Two piles side by side — NO numbers shown */}
-                <div className="grid grid-cols-2 gap-4">
-                  {(['left', 'right']).map((side) => {
-                    const count = PILE_ROUNDS[pileRound][side];
-                    const { answer } = PILE_ROUNDS[pileRound];
-                    const isCorrectSide = side === answer;
-                    const isChosen = pileChosen === side;
-                    const shouldHighlight = pileHighlight && isCorrectSide;
-
-                    return (
-                      <button
-                        key={side}
-                        onClick={() => handlePileTap(side)}
-                        className={`rounded-2xl border-2 p-4 flex flex-col items-center gap-3 min-h-[160px] transition-all focus:outline-none focus:ring-2 focus:ring-accent ${
-                          shouldHighlight
-                            ? 'border-accent bg-blue-50 shadow-md scale-[1.04]'
-                            : isChosen && !pileHighlight
-                            ? 'border-success bg-green-50 shadow-md scale-[1.04]'
-                            : 'border-gray-200 bg-card hover:border-warm hover:bg-orange-50 active:scale-95'
-                        }`}
-                        aria-label={`${side} pile — tap to choose`}
-                        disabled={!!pileChosen}
-                      >
-                        {/* Emoji grid — NO numbers */}
-                        <div
-                          className="flex flex-wrap justify-center gap-1"
-                          style={{ maxWidth: '100%' }}
-                          aria-hidden="true"
-                        >
-                          {Array.from({ length: count }).map((_, i) => (
-                            <span key={i} className="text-xl leading-none">🍎</span>
-                          ))}
-                        </div>
-                        {/* Accessible count for screen readers only */}
-                        <span className="sr-only">{count} apples</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Encouraging feedback — no "wrong" text */}
-                {pileHighlight && (
-                  <div className="bg-orange-50 border border-warm rounded-2xl p-3 text-center" role="status" aria-live="polite">
-                    <p className="text-warm font-semibold text-base">
-                      {lang === 'HI' ? `${appState.companion?.emoji || '🦉'} देखो कौन सा ढेर बड़ा है!` : `${appState.companion?.emoji || '🦉'} Look closely — which pile has more!`}
-                    </p>
-                  </div>
-                )}
-
-                {pileChosen && !pileHighlight && (
-                  <div className="bg-green-50 border border-success rounded-2xl p-3 text-center" role="status" aria-live="polite">
-                    <p className="text-success font-bold text-lg">
-                      {lang === 'HI' ? 'शाबाश! 🌟' : 'Well spotted! 🌟'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ═══ ACTIVITY 2 — Canvas Trace ═══ */}
-            {activityIndex === 2 && (
-              <div className="space-y-4">
-                <div className="bg-card rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                  <p className="text-lg font-semibold text-primary">
-                    {lang === 'HI' ? 'उल्लू को तारे तक पहुँचाओ! ✏️' : 'Help the owl find the star! Trace the dotted path 🦉⭐'}
-                  </p>
-                  <p className="text-sm text-muted mt-1">
-                    {lang === 'HI' ? 'उँगली से रास्ता बनाओ' : 'Draw with your finger or mouse'}
-                  </p>
-                </div>
-
-                {/* Canvas */}
-                <div className="rounded-2xl overflow-hidden border-2 border-gray-200 shadow-sm">
-                  <canvas
-                    ref={canvasRef}
-                    width={320}
-                    height={180}
-                    className="w-full block touch-none"
-                    style={{ cursor: traceDone ? 'default' : 'crosshair' }}
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
-                    onPointerLeave={handlePointerUp}
-                    aria-label="Trace the dotted path from the owl to the star"
-                    role="img"
-                  />
-                </div>
-
-                {/* Trace feedback */}
-                {traceDone && (
-                  <div className="bg-green-50 border border-success rounded-2xl p-4 text-center" role="status" aria-live="polite">
-                    <p className="text-2xl mb-1">{appState.companion?.emoji || '🦉'}</p>
-                    <p className="text-success font-bold text-lg">
-                      {lang === 'HI' ? 'शानदार! उल्लू तारे तक पहुँच गया! 🌟' : 'Wonderful! The owl reached the star! 🌟'}
-                    </p>
-                    {traceScore > 0 && (
-                      <p className="text-sm text-muted mt-1">
-                        {lang === 'HI'
-                          ? `${traceScore}% रास्ते पर! बहुत अच्छा।`
-                          : `${traceScore}% on the path — great tracing!`}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Continue button for canvas activity */}
-                {traceDone && (
-                  <button
-                    onClick={advanceActivity}
-                    className="w-full bg-warm text-white font-semibold py-3.5 px-6 rounded-xl min-h-[52px] hover:bg-orange-600 transition-colors shadow-sm text-lg focus:outline-none focus:ring-2 focus:ring-warm"
-                    aria-label={S.continue}
-                  >
-                    {S.continue} →
-                  </button>
-                )}
-
-                {!traceDone && (
-                  <p className="text-xs text-muted text-center">
-                    {lang === 'HI' ? 'उँगली उठाने पर रुकता है' : 'Lift your finger when done'}
-                  </p>
-                )}
-              </div>
-            )}
-          </>
+            {/* Audio hint */}
+            <p className="text-sm text-muted text-center flex items-center justify-center gap-1.5">
+              <Volume2 size={14} className="text-muted" />
+              {lang === 'HI'
+                ? 'ध्वनि सुनने के लिए स्पीकर बटन दबाएं'
+                : 'Tap the speaker icon on any word to hear it'}
+            </p>
+          </div>
         )}
 
-        {/* ══════════════════════════════════════════════════
-            ACTIVITY 3 — Completion Screen
-        ══════════════════════════════════════════════════ */}
-        {activityIndex === 3 && (
-          <div className="flex flex-col items-center text-center py-6 space-y-5">
-
-            {/* Companion celebration */}
-            <div className="w-28 h-28 bg-warm rounded-full flex items-center justify-center text-6xl shadow-lg">
-              {appState.companion?.emoji || '🦉'}
+        {/* ═══════════════════════════════════════════════════════════════════
+            ACTIVITY 2 — Which Group Has More? (Dyscalculia proxy)
+        ═══════════════════════════════════════════════════════════════════ */}
+        {activityIndex === 1 && (
+          <div className="space-y-5 animate-fadeIn">
+            {/* Instruction card */}
+            <div className="bg-card rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <Target size={20} className="text-accent" />
+                <p className="text-lg font-semibold text-primary">
+                  {lang === 'HI'
+                    ? 'किस समूह में ज़्यादा हैं?'
+                    : 'Which group has more?'}
+                </p>
+              </div>
+              <p className="text-sm text-muted">
+                {lang === 'HI'
+                  ? `दौर ${pileRound + 1} / ${SCREENING_PILE_ROUNDS.length}`
+                  : `Round ${pileRound + 1} of ${SCREENING_PILE_ROUNDS.length}`}
+              </p>
             </div>
 
+            {/* Two groups side by side */}
+            <div className="grid grid-cols-2 gap-4">
+              {['left', 'right'].map((side) => {
+                const { displayLeft, displayRight, correctDisplaySide } =
+                  getPileValues(pileRound);
+                const count = side === 'left' ? displayLeft : displayRight;
+                const isChosen = pileChosen === side;
+                const isCorrectSide = side === correctDisplaySide;
+                const showCorrectHighlight =
+                  pileFeedback && isCorrectSide;
+                const showIncorrectHighlight =
+                  pileFeedback === 'incorrect' && isChosen && !isCorrectSide;
+
+                let borderClass = 'border-gray-200 bg-card hover:border-accent/40';
+                if (showCorrectHighlight) {
+                  borderClass = 'border-green-400 bg-green-50 shadow-md scale-[1.03]';
+                } else if (showIncorrectHighlight) {
+                  borderClass = 'border-warm/50 bg-orange-50/40';
+                } else if (isChosen && pileFeedback === 'correct') {
+                  borderClass = 'border-green-400 bg-green-50 shadow-md scale-[1.03]';
+                }
+
+                return (
+                  <button
+                    key={`${pileRound}-${side}`}
+                    onClick={() => handlePileTap(side)}
+                    className={`rounded-xl border-2 p-4 flex flex-col items-center justify-center gap-3 min-h-[160px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent ${borderClass}`}
+                    aria-label={`${side} group — tap to choose`}
+                    disabled={!!pileChosen}
+                  >
+                    {/* Dot grid — styled circles, NOT emojis */}
+                    <div
+                      className="flex flex-wrap justify-center gap-1.5 max-w-[120px]"
+                      aria-hidden="true"
+                    >
+                      {Array.from({ length: count }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="bg-accent rounded-full w-6 h-6 flex-shrink-0"
+                        />
+                      ))}
+                    </div>
+                    {/* Accessible count for screen readers */}
+                    <span className="sr-only">{count} circles</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Feedback */}
+            {pileFeedback === 'correct' && (
+              <div
+                className="bg-green-50 border border-green-200 rounded-xl p-3 text-center animate-fadeIn"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <CheckCircle2 size={20} className="text-green-600" />
+                  <p className="text-green-700 font-semibold text-lg">
+                    {lang === 'HI' ? 'शाबाश!' : 'Well spotted!'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {pileFeedback === 'incorrect' && (
+              <div
+                className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center animate-fadeIn"
+                role="status"
+                aria-live="polite"
+              >
+                <p className="text-warm font-semibold text-base">
+                  {lang === 'HI'
+                    ? 'ध्यान से देखो — कौन सा समूह बड़ा है!'
+                    : 'Look closely — which group has more!'}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            ACTIVITY 3 — Trace the Path (Dysgraphia proxy)
+        ═══════════════════════════════════════════════════════════════════ */}
+        {activityIndex === 2 && (
+          <div className="space-y-4 animate-fadeIn">
+            {/* Instruction card */}
+            <div className="bg-card rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <Hand size={20} className="text-accent" />
+                <p className="text-lg font-semibold text-primary">
+                  {lang === 'HI'
+                    ? 'बिन्दुओं के रास्ते पर उंगली चलाएं'
+                    : 'Trace along the dotted path'}
+                </p>
+              </div>
+              <p className="text-sm text-muted">
+                {lang === 'HI'
+                  ? `पथ ${tracePathIdx + 1} / ${SCREENING_TRACE_PATHS.length}`
+                  : `Path ${tracePathIdx + 1} of ${SCREENING_TRACE_PATHS.length}`}
+              </p>
+            </div>
+
+            {/* Canvas */}
+            <div className="rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm bg-white">
+              <canvas
+                ref={canvasRef}
+                width={CANVAS_W}
+                height={CANVAS_H}
+                className="w-full block touch-none"
+                style={{ cursor: traceDone ? 'default' : 'crosshair' }}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerLeave={handlePointerUp}
+                aria-label={
+                  lang === 'HI'
+                    ? 'शुरू से अंत तक बिन्दुओं के रास्ते पर उंगली चलाएं'
+                    : 'Trace the dotted path from start to end'
+                }
+                role="img"
+              />
+            </div>
+
+            {/* Trace feedback */}
+            {traceDone && (
+              <div
+                className="bg-green-50 border border-green-200 rounded-xl p-4 text-center animate-fadeIn"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <CheckCircle2 size={20} className="text-green-600" />
+                  <p className="text-green-700 font-semibold text-lg">
+                    {lang === 'HI' ? 'बहुत अच्छा!' : 'Nice tracing!'}
+                  </p>
+                </div>
+                <p className="text-sm text-muted">
+                  {lang === 'HI'
+                    ? 'हरा = सही रास्ते पर, पीला = थोड़ा बाहर, नारंगी = रास्ते से दूर'
+                    : 'Green = on path, Yellow = slightly off, Orange = off path'}
+                </p>
+              </div>
+            )}
+
+            {/* Continue / next trace button */}
+            {traceDone && (
+              <button
+                onClick={handleNextTrace}
+                className="w-full bg-accent text-white font-semibold py-3.5 px-6 rounded-xl min-h-[52px] hover:bg-accent/90 transition-colors shadow-sm text-lg focus:outline-none focus:ring-2 focus:ring-accent flex items-center justify-center gap-2"
+                aria-label={
+                  tracePathIdx + 1 < SCREENING_TRACE_PATHS.length
+                    ? (lang === 'HI' ? 'अगला पथ' : 'Next path')
+                    : S.continue
+                }
+              >
+                {tracePathIdx + 1 < SCREENING_TRACE_PATHS.length
+                  ? (lang === 'HI' ? 'अगला पथ' : 'Next Path')
+                  : S.continue}
+                <ArrowRight size={18} />
+              </button>
+            )}
+
+            {!traceDone && (
+              <p className="text-sm text-muted text-center flex items-center justify-center gap-1.5">
+                <Hand size={14} className="text-muted" />
+                {lang === 'HI'
+                  ? 'शुरू से अंत तक उंगली या माउस से रेखा खींचें'
+                  : 'Draw from START to END with your finger or mouse'}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            COMPLETION SCREEN
+        ═══════════════════════════════════════════════════════════════════ */}
+        {activityIndex === 3 && (
+          <div className="flex flex-col items-center text-center py-6 space-y-5 animate-fadeIn">
+            {/* Success icon */}
+            <div className="w-20 h-20 bg-accent/10 rounded-full flex items-center justify-center">
+              <Sparkles size={36} className="text-accent" />
+            </div>
+
+            {/* Title */}
             <div>
-              <h2 className="text-3xl font-bold text-primary">
-                {lang === 'HI' ? 'शानदार! 🌟' : 'Amazing! 🌟'}
+              <h2 className="text-2xl font-bold text-primary">
+                {S.screeningComplete}
               </h2>
               <p className="text-muted mt-1 text-base font-medium">
-                {appState.companion?.nickname || appState.companion?.name || 'Gyaan'}{lang === 'HI' ? ' बहुत खुश है!' : ' is so proud of you!'}
+                {appState.companion?.nickname || 'Gyaan'}
+                {lang === 'HI' ? ' बहुत खुश है!' : ' is proud of you!'}
               </p>
             </div>
 
-            {/* Profile reveal card */}
-            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 w-full max-w-sm text-left space-y-2">
-              <p className="text-base font-semibold text-primary">
-                {lang === 'HI' ? 'आपके लिए खास रास्ता तैयार है 🌟' : 'Your personalised learning path is ready 🌟'}
-              </p>
-              <p className="text-sm text-muted leading-relaxed">
-                {(STRINGS[lang] || STRINGS.EN).learnerProfileReveal}
-              </p>
-            </div>
+            {/* Profile reveal card — child-friendly, no clinical labels */}
+            {profileResult && (
+              <div className="bg-card border border-gray-100 rounded-xl p-5 w-full max-w-sm shadow-sm space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-accent/10 rounded-full flex items-center justify-center flex-shrink-0">
+                    <CheckCircle2 size={22} className="text-accent" />
+                  </div>
+                  <p className="text-lg font-semibold text-primary text-left">
+                    {PROFILE_MESSAGES[profileResult.detectedType]?.[lang] ||
+                      PROFILE_MESSAGES.dyslexia[lang]}
+                  </p>
+                </div>
 
-            {/* What's coming next — builds excitement */}
-            <div className="bg-card border border-gray-100 rounded-2xl p-4 w-full max-w-sm space-y-2 shadow-sm">
-              <p className="text-sm font-semibold text-primary text-center">
-                {lang === 'HI' ? '🚀 आज का सफर' : '🚀 Your journey starts with'}
-              </p>
-              <div className="flex items-center gap-2 text-sm text-muted">
-                <span className="text-xl">📖</span>
-                <span>{lang === 'HI' ? 'पठन कक्ष — "चतुर कौआ"' : 'Reading Room — "The Clever Crow"'}</span>
+                {/* Visual strength indicator — subtle bars, no numbers */}
+                <div className="space-y-2 pt-2">
+                  <ProfileBar
+                    label={lang === 'HI' ? 'सुनना और ध्वनि' : 'Listening & Sounds'}
+                    value={profileResult.dyslexiaScore}
+                    isDetected={profileResult.detectedType === 'dyslexia'}
+                  />
+                  <ProfileBar
+                    label={lang === 'HI' ? 'वस्तुएं और चित्र' : 'Objects & Visuals'}
+                    value={profileResult.dyscalculiaScore}
+                    isDetected={profileResult.detectedType === 'dyscalculia'}
+                  />
+                  <ProfileBar
+                    label={lang === 'HI' ? 'बोलना और बनाना' : 'Speaking & Drawing'}
+                    value={profileResult.dysgraphiaScore}
+                    isDetected={profileResult.detectedType === 'dysgraphia'}
+                  />
+                </div>
               </div>
-              <div className="flex items-center gap-2 text-sm text-muted">
-                <span className="text-xl">🔢</span>
-                <span>{lang === 'HI' ? 'संख्या जगत — सेब जोड़ो' : 'Number World — Adding Apples'}</span>
+            )}
+
+            {/* What's next */}
+            <div className="bg-surface border border-gray-100 rounded-xl p-4 w-full max-w-sm space-y-2">
+              <p className="text-sm font-semibold text-primary text-center">
+                {lang === 'HI' ? 'आपका सफ़र शुरू होता है' : 'Your journey begins with'}
+              </p>
+              <div className="space-y-1.5">
+                {[
+                  {
+                    icon: <Play size={16} className="text-accent" />,
+                    text: lang === 'HI' ? 'आपके लिए बने खास कार्यक्रम' : 'Activities designed for you',
+                  },
+                  {
+                    icon: <Target size={16} className="text-accent" />,
+                    text: lang === 'HI' ? 'हर दिन नई चुनौतियां' : 'New challenges every day',
+                  },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center gap-2.5 text-sm text-muted">
+                    {item.icon}
+                    <span>{item.text}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* CTA */}
             <button
               onClick={handleComplete}
-              className="w-full bg-warm text-white font-bold py-4 px-6 rounded-xl min-h-[56px] text-xl hover:bg-orange-600 transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-warm active:bg-orange-700"
+              className="w-full bg-accent text-white font-bold py-4 px-6 rounded-xl min-h-[56px] text-xl hover:bg-accent/90 transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-accent active:scale-[0.98] flex items-center justify-center gap-2"
               aria-label={lang === 'HI' ? 'सीखना शुरू करें' : "Let's Start Learning!"}
             >
-              {lang === 'HI' ? 'सीखना शुरू करें! →' : "Let's Start Learning! →"}
+              {lang === 'HI' ? 'सीखना शुरू करें' : "Let's Start Learning!"}
+              <ArrowRight size={20} />
             </button>
-
-            <p className="text-xs text-muted">
-              {lang === 'HI' ? '📶 ऑफलाइन भी काम करेगा' : '📶 Works offline too — no internet needed'}
-            </p>
           </div>
         )}
-
       </div>
     </Layout>
   );
 }
+
+// ─── Profile bar sub-component ────────────────────────────────────────────────
+// Shows a subtle bar for each learning dimension — no numbers, just relative fill
+const ProfileBar = ({ label, value, isDetected }) => (
+  <div className="flex items-center gap-3">
+    <span className={`text-xs w-28 text-right flex-shrink-0 ${isDetected ? 'font-semibold text-primary' : 'text-muted'}`}>
+      {label}
+    </span>
+    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all duration-700 ${
+          isDetected ? 'bg-accent' : 'bg-gray-300'
+        }`}
+        style={{ width: `${Math.max(value * 100, 8)}%` }}
+      />
+    </div>
+  </div>
+);

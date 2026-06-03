@@ -1,3 +1,194 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ─── BASE STYLES ──────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-surface text-gray-800 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Better focus rings */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-surface;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+}
+
+/* ─── COMPONENT UTILITIES ──────────────────────────────────────────────────── */
+@layer components {
+  /* Glassmorphism card */
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-md border border-white/40 shadow-sm;
+  }
+
+  /* Gradient text utility */
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
+  }
+
+  /* Professional card with subtle hover */
+  .card-elevated {
+    @apply bg-card rounded-2xl shadow-sm border border-gray-100 transition-all duration-200;
+  }
+  .card-elevated:hover {
+    @apply shadow-md -translate-y-0.5;
+  }
+
+  /* Interactive card (clickable) */
+  .card-interactive {
+    @apply card-elevated cursor-pointer active:scale-[0.98];
+  }
+
+  /* Status dots (replacing emoji dots) */
+  .status-dot {
+    @apply w-2.5 h-2.5 rounded-full inline-block flex-shrink-0;
+  }
+  .status-dot-green { @apply bg-emerald-500; }
+  .status-dot-yellow { @apply bg-amber-400; }
+  .status-dot-red { @apply bg-red-500; }
+
+  /* SLD type badges */
+  .badge {
+    @apply text-xs font-medium px-2.5 py-1 rounded-full inline-flex items-center gap-1;
+  }
+  .badge-dyslexia { @apply bg-blue-50 text-blue-700 border border-blue-200; }
+  .badge-dyscalculia { @apply bg-purple-50 text-purple-700 border border-purple-200; }
+  .badge-dysgraphia { @apply bg-orange-50 text-orange-700 border border-orange-200; }
+
+  /* Companion container */
+  .companion-container {
+    @apply w-14 h-14 rounded-2xl flex items-center justify-center text-2xl
+           bg-gradient-to-br from-warm/20 to-orange-100 border border-warm/30
+           shadow-sm transition-all duration-300;
+  }
+  .companion-container.happy {
+    @apply scale-110 shadow-md from-warm/30 to-orange-200;
+  }
+  .companion-container.encouraging {
+    animation: gentlePulse 2s ease-in-out infinite;
+  }
+
+  /* Button variants */
+  .btn-primary {
+    @apply bg-warm text-white font-semibold py-3 px-6 rounded-xl min-h-[48px]
+           hover:bg-orange-600 active:bg-orange-700 transition-all duration-200
+           shadow-sm hover:shadow-md active:scale-[0.98] inline-flex items-center justify-center gap-2;
+  }
+  .btn-secondary {
+    @apply bg-accent text-white font-semibold py-3 px-6 rounded-xl min-h-[48px]
+           hover:bg-blue-700 active:bg-blue-800 transition-all duration-200
+           shadow-sm hover:shadow-md active:scale-[0.98] inline-flex items-center justify-center gap-2;
+  }
+  .btn-ghost {
+    @apply border-2 border-accent text-accent font-semibold py-3 px-6 rounded-xl min-h-[48px]
+           hover:bg-accent hover:text-white transition-all duration-200
+           active:scale-[0.98] inline-flex items-center justify-center gap-2;
+  }
+  .btn-calm {
+    @apply bg-calm text-white font-semibold py-3 px-6 rounded-xl min-h-[48px]
+           hover:bg-teal-600 active:bg-teal-700 transition-all duration-200
+           shadow-sm hover:shadow-md active:scale-[0.98] inline-flex items-center justify-center gap-2;
+  }
+
+  /* Section heading */
+  .section-heading {
+    @apply text-lg font-semibold text-primary flex items-center gap-2;
+  }
+
+  /* Toast notification */
+  .toast {
+    @apply fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white
+           text-sm px-5 py-3 rounded-xl shadow-lg z-[60]
+           animate-slideUp;
+  }
+}
+
+/* ─── CUSTOM ANIMATIONS ────────────────────────────────────────────────────── */
+@layer utilities {
+  .animate-fadeIn {
+    animation: fadeIn 0.4s ease-out forwards;
+  }
+  .animate-slideUp {
+    animation: slideUp 0.4s ease-out forwards;
+  }
+  .animate-breathe {
+    animation: breathe 4s ease-in-out infinite;
+  }
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+  .animate-scaleIn {
+    animation: scaleIn 0.3s ease-out forwards;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(0.85); opacity: 0.7; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes gentlePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(232, 119, 34, 0.3); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(232, 119, 34, 0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Shimmer loading skeleton */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.5rem;
+}
+
+/* Stagger animation delays for lists */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.3s; }

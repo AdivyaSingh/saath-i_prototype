@@ -4,19 +4,30 @@
 /**
  * Base function — calls /api/gemini Vercel serverless proxy.
  * Returns the text string from Gemini response, or null on error.
+ * Includes timeout handling via AbortController.
  */
-export async function callGemini(prompt) {
+export async function callGemini(prompt, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const res = await fetch('/api/gemini', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return data.text || null;
   } catch (err) {
-    console.error('Gemini error:', err);
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      console.error('Gemini request timed out');
+    } else {
+      console.error('Gemini error:', err);
+    }
     return null;
   }
 }
@@ -25,14 +36,121 @@ export async function callGemini(prompt) {
  * Generates a comprehension question for the Reading Room.
  * Returns a parsed question object or null.
  */
-export async function generateComprehensionQuestion(passageText, language = 'EN') {
-  const prompt = `Generate 1 simple multiple-choice comprehension question for a Class 4 student with dyslexia about this passage:
+export async function generateComprehensionQuestion(passageText, language = 'EN', classLevel = 4) {
+  const prompt = `Generate 1 simple multiple-choice comprehension question for a Class ${classLevel} student with dyslexia about this passage:
 "${passageText}"
 
 Language for question: ${language === 'HI' ? 'Hindi' : 'English'}.
 Return ONLY valid JSON with no extra text or markdown backticks:
 { "question": "...", "options": ["...", "...", "...", "..."], "correct": 0 }
 Keep the question very simple. Each option must be 3-5 words maximum.`;
+
+  const raw = await callGemini(prompt);
+  if (!raw) return null;
+  try {
+    const clean = raw.replace(/```json|```/g, '').trim();
+    return JSON.parse(clean);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generates a reading passage appropriate for the given class level.
+ * Returns a parsed object with passage and comprehension questions, or null.
+ */
+export async function generateReadingPassage(classLevel = 4, language = 'EN') {
+  const lang = language === 'HI' ? 'Hindi' : 'English';
+  const prompt = `Generate a short reading passage suitable for a Class ${classLevel} Indian school student.
+The passage should:
+- Be a simple, engaging story with moral values (similar to NCERT textbook stories)
+- Be 80-120 words for Classes 1-3, 120-180 words for Classes 4-6, 150-200 words for Classes 7-10
+- Use simple vocabulary appropriate for the grade level
+- Be in ${lang}
+
+After the passage, generate 3 comprehension questions with 4 multiple-choice options each.
+
+Return ONLY valid JSON with NO markdown backticks:
+{
+  "title": "Story Title",
+  "text": "Full passage text here...",
+  "syllabledWords": { "difficult": "dif-fi-cult", "another": "an-oth-er" },
+  "questions": [
+    { "question": "Question text?", "options": ["Option A", "Option B", "Option C", "Option D"], "correct": 0 }
+  ]
+}
+
+Include 5-8 syllable breakdowns for the harder words in the passage.`;
+
+  const raw = await callGemini(prompt, 20000);
+  if (!raw) return null;
+  try {
+    const clean = raw.replace(/```json|```/g, '').trim();
+    return JSON.parse(clean);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generates math word problems appropriate for the given class level.
+ * Returns parsed object or null.
+ */
+export async function generateMathActivity(classLevel = 4, type = 'addition') {
+  const prompt = `Generate a simple math activity for a Class ${classLevel} Indian school student with dyscalculia.
+Type: ${type}
+
+The activity should:
+- Use real-world objects that Indian children can relate to (fruits, animals, classroom items)
+- Be visual and concrete — focus on counting objects, NOT abstract symbols
+- Include clear step-by-step instructions
+
+Return ONLY valid JSON with NO markdown backticks:
+{
+  "title": "Activity Title",
+  "titleHI": "Hindi Title",
+  "type": "${type}",
+  "instruction": "What the student should do",
+  "instructionHI": "Hindi instruction",
+  "leftCount": 3,
+  "rightCount": 4,
+  "object": "apples",
+  "objectHI": "सेब",
+  "objectEmoji": "🍎",
+  "answer": 7,
+  "equation": "3 + 4 = 7"
+}`;
+
+  const raw = await callGemini(prompt);
+  if (!raw) return null;
+  try {
+    const clean = raw.replace(/```json|```/g, '').trim();
+    return JSON.parse(clean);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generates a creative writing prompt for Expression Studio.
+ * Returns parsed object or null.
+ */
+export async function generateExpressionPrompt(classLevel = 4, language = 'EN') {
+  const lang = language === 'HI' ? 'Hindi' : 'English';
+  const prompt = `Generate a creative story-starter prompt for a Class ${classLevel} Indian school student with dysgraphia.
+
+The prompt should:
+- Be imaginative and open-ended
+- Feature Indian settings, characters, or cultural elements
+- Be short (1-2 sentences) but evocative
+- Include related word tiles the student can use to build a response
+
+Return ONLY valid JSON with NO markdown backticks:
+{
+  "prompt": "Story starter prompt in ${lang}...",
+  "scene": "Brief scene description",
+  "wordTiles": ["word1", "word2", "word3", "word4", "word5", "word6", "word7", "word8", "word9", "word10", "word11", "word12"]
+}`;
 
   const raw = await callGemini(prompt);
   if (!raw) return null;
@@ -84,7 +202,7 @@ Generate the IEP with exactly these 5 sections, using these exact headings:
 ## Teacher Notes
 (Leave blank — write only: "To be completed by [teacher name].")`;
 
-  return await callGemini(prompt);
+  return await callGemini(prompt, 25000);
 }
 
 /**
@@ -93,12 +211,32 @@ Generate the IEP with exactly these 5 sections, using these exact headings:
  * Returns transcript string.
  */
 export async function transcribeVoice(transcript) {
-  // In the prototype, the browser's webkitSpeechRecognition handles real transcription.
-  // This function polishes the raw transcript using Gemini.
   if (!transcript) return '';
   const prompt = `A child with dysgraphia just told this story aloud. Clean up the transcription lightly — fix obvious speech errors and add punctuation — but keep their voice and words:
 "${transcript}"
 Return only the cleaned story text, no commentary.`;
   const result = await callGemini(prompt);
   return result || transcript;
+}
+
+/**
+ * Generates an AI-powered learning suggestion for a student.
+ * Used in teacher dashboard for dynamic insights.
+ */
+export async function generateStudentInsight(student) {
+  const prompt = `You are an educational AI assistant helping Indian school teachers support students with ${student.sldType}.
+
+Student: ${student.name}, Class ${student.class}
+SLD: ${student.sldType} (${student.severity})
+This week: ${student.weeklyStats.timeSpent} spent, ${student.weeklyStats.activitiesCompleted} activities, asked for help ${student.weeklyStats.helpRequests} times
+Error patterns: ${student.errorPatterns.map(e => `${e.pattern} (${e.trend})`).join('; ')}
+
+Generate a brief, actionable teaching suggestion (2-3 sentences) that:
+- References specific observations from the data
+- Suggests a concrete accommodation or strategy
+- Uses encouraging, professional language
+
+Return only the suggestion text, no headers or formatting.`;
+
+  return await callGemini(prompt);
 }

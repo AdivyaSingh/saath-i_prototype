@@ -1,36 +1,82 @@
 // src/pages/StudentHome.jsx
 // Route: /home
-// Daily landing screen — activities, streak, companion, "I'm struggling" button.
-// Module 2 will build this page fully.
-// Placeholder: unblocks routing.
+// Daily landing screen — activities, streak, companion, breathing overlay.
+// Emotionally safe: no scores, no SLD labels shown to the child.
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, Hash, Trophy, Flame, Wind, ChevronRight, Sparkles, Star } from 'lucide-react';
+import {
+  BookOpen, Calculator, Palette, Flame, Trophy, Heart,
+  ArrowRight, Sparkles, Wind, Sun, Moon, CloudSun,
+} from 'lucide-react';
 import { useApp } from '../App';
 import Layout from '../components/Layout';
-import { STRINGS } from '../data';
+import { STRINGS, READING_CONTENT, MATH_ACTIVITIES } from '../data';
 
-// Breathing cycle phases
+// ─── BREATHING CYCLE CONFIG ───────────────────────────────────────────────────
+// 3 phases × 3 cycles = ~30s total (4s + 2s + 4s per cycle)
 const BREATH_PHASES = [
-  { label: 'Breathe in...', scale: 'scale-110', duration: 4000 },
-  { label: 'Hold...', scale: 'scale-110', duration: 2000 },
-  { label: 'Breathe out...', scale: 'scale-75', duration: 4000 },
+  { label: 'Breathe in...', labelHI: 'सांस लो...', duration: 4000 },
+  { label: 'Hold...',       labelHI: 'रोको...',     duration: 2000 },
+  { label: 'Breathe out...', labelHI: 'छोड़ो...',   duration: 4000 },
 ];
 
-export default function StudentHome() {
+// ─── ACTIVITY CARD DATA BUILDER ───────────────────────────────────────────────
+const buildActivities = (lang, S) => [
+  {
+    id: 'reading',
+    icon: BookOpen,
+    title: S.readingRoom,
+    subtitle: lang === 'HI'
+      ? `"${READING_CONTENT[0]?.titleHI || 'चतुर कौआ'}"`
+      : `"${READING_CONTENT[0]?.title || 'The Clever Crow'}"`,
+    duration: lang === 'HI' ? '~10 मिनट' : '~10 min',
+    borderColor: 'border-accent',
+    iconBg: 'bg-accent/10',
+    iconColor: 'text-accent',
+    route: '/reading-room',
+  },
+  {
+    id: 'numbers',
+    icon: Calculator,
+    title: S.numberWorld,
+    subtitle: lang === 'HI'
+      ? (MATH_ACTIVITIES[0]?.titleHI || 'सेब जोड़ो')
+      : (MATH_ACTIVITIES[0]?.title || 'Adding Apples'),
+    duration: lang === 'HI' ? '~8 मिनट' : '~8 min',
+    borderColor: 'border-warm',
+    iconBg: 'bg-warm/10',
+    iconColor: 'text-warm',
+    route: '/number-world',
+  },
+  {
+    id: 'expression',
+    icon: Palette,
+    title: S.expressionStudio,
+    subtitle: lang === 'HI' ? 'बोलो, बनाओ, या शब्द जोड़ो' : 'Speak, draw, or build words',
+    duration: lang === 'HI' ? '~12 मिनट' : '~12 min',
+    borderColor: 'border-success',
+    iconBg: 'bg-success/10',
+    iconColor: 'text-success',
+    route: '/expression-studio',
+  },
+];
+
+// ─── COMPONENT ────────────────────────────────────────────────────────────────
+const StudentHome = () => {
   const { appState, updateState } = useApp();
   const navigate = useNavigate();
   const lang = appState.language || 'EN';
   const S = STRINGS[lang] || STRINGS.EN;
 
-  const [showStruggleModal, setShowStruggleModal] = useState(false);
+  // Local state
+  const [showBreathingOverlay, setShowBreathingOverlay] = useState(false);
   const [breathPhase, setBreathPhase] = useState(0);
   const [breathCycles, setBreathCycles] = useState(0);
-  const [showEasierPrompt, setShowEasierPrompt] = useState(false);
+  const [showPostBreathPrompt, setShowPostBreathPrompt] = useState(false);
   const [companionState, setCompanionState] = useState('idle');
 
-  // Greeting
+  // ─── TIME-AWARE GREETING ──────────────────────────────────────────────────
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return lang === 'HI' ? 'शुभ प्रभात' : 'Good morning';
@@ -38,65 +84,69 @@ export default function StudentHome() {
     return lang === 'HI' ? 'शुभ संध्या' : 'Good evening';
   };
 
-  const todayLabel = new Date().toLocaleDateString(lang === 'HI' ? 'hi-IN' : 'en-IN', {
-    weekday: 'long', month: 'long', day: 'numeric',
-  });
+  const getGreetingIcon = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return <Sun className="w-6 h-6 text-warm" />;
+    if (hour < 17) return <CloudSun className="w-6 h-6 text-warm" />;
+    return <Moon className="w-6 h-6 text-accent" />;
+  };
 
-  // Breathing animation cycle
+  const todayLabel = new Date().toLocaleDateString(
+    lang === 'HI' ? 'hi-IN' : 'en-IN',
+    { weekday: 'long', month: 'long', day: 'numeric' }
+  );
+
+  // ─── BREATHING CYCLE LOGIC ────────────────────────────────────────────────
   useEffect(() => {
-    if (!showStruggleModal) return;
+    if (!showBreathingOverlay) return;
+
     let timeout;
-    const phases = BREATH_PHASES;
-    const advance = (idx, cycles) => {
-      const next = (idx + 1) % phases.length;
-      const nextCycles = next === 0 ? cycles + 1 : cycles;
+    const advance = (phaseIdx, cycleCount) => {
+      const nextPhase = (phaseIdx + 1) % BREATH_PHASES.length;
+      const nextCycles = nextPhase === 0 ? cycleCount + 1 : cycleCount;
+
       timeout = setTimeout(() => {
-        setBreathPhase(next);
+        if (nextCycles >= 3) {
+          // 3 cycles complete — show post-breath prompt
+          setShowPostBreathPrompt(true);
+          return;
+        }
+        setBreathPhase(nextPhase);
         setBreathCycles(nextCycles);
-        if (nextCycles < 3) advance(next, nextCycles);
-        else setShowEasierPrompt(true);
-      }, phases[idx].duration);
+        advance(nextPhase, nextCycles);
+      }, BREATH_PHASES[phaseIdx].duration);
     };
+
+    // Reset and start
     setBreathPhase(0);
     setBreathCycles(0);
-    setShowEasierPrompt(false);
+    setShowPostBreathPrompt(false);
     advance(0, 0);
-    return () => clearTimeout(timeout);
-  }, [showStruggleModal]);
 
-  const handleStruggleOpen = () => {
-    setShowStruggleModal(true);
+    return () => clearTimeout(timeout);
+  }, [showBreathingOverlay]);
+
+  // ─── HANDLERS ─────────────────────────────────────────────────────────────
+  const openBreathingOverlay = () => {
+    setShowBreathingOverlay(true);
     setCompanionState('encouraging');
   };
-  const handleStruggleClose = () => {
-    setShowStruggleModal(false);
+
+  const closeBreathingOverlay = () => {
+    setShowBreathingOverlay(false);
     setCompanionState('idle');
   };
 
-  const activities = [
-    {
-      id: 'reading',
-      icon: <BookOpen className="w-6 h-6" />,
-      title: S.readingRoom,
-      subtitle: lang === 'HI' ? '"चतुर कौआ"' : '"The Clever Crow"',
-      duration: lang === 'HI' ? '~10 मिनट' : '~10 min',
-      badge: lang === 'HI' ? '🔤 डिस्लेक्सिया सहायता' : '🔤 Dyslexia Support',
-      borderColor: 'border-accent',
-      iconBg: 'bg-accent/10 text-accent',
-      route: '/reading-room',
-    },
-    {
-      id: 'numbers',
-      icon: <Hash className="w-6 h-6" />,
-      title: S.numberWorld,
-      subtitle: lang === 'HI' ? 'सेब जोड़ो' : 'Adding Apples',
-      duration: lang === 'HI' ? '~8 मिनट' : '~8 min',
-      badge: lang === 'HI' ? '🧮 डिसकैलकुलिया फोकस' : '🧮 Dyscalculia Focus',
-      borderColor: 'border-warm',
-      iconBg: 'bg-warm/10 text-warm',
-      route: '/number-world',
-    },
-  ];
+  const handleActivityStart = (route) => {
+    setCompanionState('happy');
+    setTimeout(() => navigate(route), 200);
+  };
+
+  // Activity data
+  const activities = buildActivities(lang, S);
+
+  // Stagger class for entrance animation
+  const staggerClasses = ['stagger-1', 'stagger-2', 'stagger-3'];
 
   return (
     <Layout
@@ -112,121 +162,114 @@ export default function StudentHome() {
       {/* ── Page wrapper ─────────────────────────────────── */}
       <div className="max-w-md mx-auto px-4 py-6 pb-28">
 
-        {/* ── Greeting ─────────────────────────────────────── */}
-        <div className="mb-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-primary leading-tight">
-                {getGreeting()}, {appState.studentName || 'Arjun'}! 👋
-              </h1>
-              <p className="text-muted text-sm mt-1">{todayLabel}</p>
-            </div>
-            {/* Streak badge */}
-            <div className="flex items-center gap-1 bg-orange-50 border border-orange-100 rounded-xl px-3 py-2 min-h-[48px]">
-              <Flame className="w-5 h-5 text-warm" />
-              <span className="text-warm font-bold text-lg leading-none">{appState.streakDays || 4}</span>
-            </div>
+        {/* ── Greeting Section ───────────────────────────── */}
+        <div className="mb-6 animate-fadeIn">
+          <div className="flex items-center gap-3 mb-1">
+            {getGreetingIcon()}
+            <h1 className="text-2xl font-bold text-primary leading-tight">
+              {getGreeting()}, {appState.studentName || 'Arjun'}
+            </h1>
           </div>
+          <p className="text-muted text-sm ml-9">{todayLabel}</p>
 
-          {/* Motivational banner */}
+          {/* Motivational companion banner */}
           <div className="mt-4 bg-gradient-to-r from-accent/10 to-primary/10 rounded-2xl p-4 flex items-center gap-3">
-            <span className="text-3xl">{appState.companion?.emoji || '🦉'}</span>
-            <p className="text-primary font-medium text-base leading-snug">
-              {lang === 'HI'
-                ? `${appState.companion?.nickname || 'Gyaan'} यहाँ है! आज भी हम साथ सीखेंगे 🌟`
-                : `${appState.companion?.nickname || 'Gyaan'} is here! Let's learn together today 🌟`}
-            </p>
+            <span className="text-3xl" aria-hidden="true">
+              {appState.companion?.emoji || '🦉'}
+            </span>
+            <div className="flex-1">
+              <p className="text-primary font-medium text-base leading-snug">
+                {lang === 'HI'
+                  ? `${appState.companion?.nickname || 'Gyaan'} यहाँ है! आज भी हम साथ सीखेंगे`
+                  : `${appState.companion?.nickname || 'Gyaan'} is here! Let's learn together today`}
+              </p>
+              <p className="text-muted text-sm mt-0.5">
+                {lang === 'HI' ? 'आपके लिए अनुकूलित' : 'Adapted for you'}
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* ── Today's Journey ──────────────────────────────── */}
-        <div className="mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xl">🚀</span>
+        {/* ── Today's Journey ────────────────────────────── */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-5 h-5 text-warm" />
             <h2 className="text-lg font-semibold text-primary">{S.todaysJourney}</h2>
           </div>
 
           <div className="space-y-3">
-            {activities.map((act) => (
-              <div
-                key={act.id}
-                className={`bg-card rounded-2xl shadow-sm p-4 border-l-4 ${act.borderColor} border border-gray-100`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${act.iconBg}`}>
-                      {act.icon}
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-semibold text-primary text-base leading-tight">{act.title}</h3>
-                      <p className="text-muted text-sm mt-0.5 truncate">{act.subtitle}</p>
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <span className="text-xs text-muted">{act.duration}</span>
-                        <span className="text-xs bg-surface px-2 py-0.5 rounded-full text-muted border border-gray-100">
-                          {act.badge}
+            {activities.map((act, idx) => {
+              const IconComponent = act.icon;
+              return (
+                <div
+                  key={act.id}
+                  className={`card-elevated p-4 border-l-4 ${act.borderColor} animate-slideUp ${staggerClasses[idx]}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    {/* Icon + text */}
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div
+                        className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${act.iconBg}`}
+                        aria-hidden="true"
+                      >
+                        <IconComponent className={`w-6 h-6 ${act.iconColor}`} />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-primary text-base leading-tight">
+                          {act.title}
+                        </h3>
+                        <p className="text-muted text-sm mt-0.5 truncate">
+                          {act.subtitle}
+                        </p>
+                        <span className="text-xs text-muted mt-1 inline-block">
+                          {act.duration}
                         </span>
                       </div>
                     </div>
+
+                    {/* Start button */}
+                    <button
+                      onClick={() => handleActivityStart(act.route)}
+                      className="flex-shrink-0 bg-accent text-white px-4 py-2 rounded-xl min-h-[48px] font-semibold text-sm flex items-center gap-1.5 shadow-sm hover:shadow-md transition-all duration-200"
+                      aria-label={`Start ${act.title}`}
+                    >
+                      {lang === 'HI' ? 'शुरू' : 'Start'}
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => { setCompanionState('happy'); setTimeout(() => navigate(act.route), 200); }}
-                    className="flex-shrink-0 bg-accent text-white px-4 py-2 rounded-xl min-h-[48px] font-semibold text-sm flex items-center gap-1 shadow-sm hover:bg-blue-700 transition-colors"
-                    aria-label={`Start ${act.title}`}
-                  >
-                    {lang === 'HI' ? 'शुरू' : 'Start'}
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        {/* ── Expression Studio card ───────────────────────── */}
-        <div className="mb-6">
-          <button
-            onClick={() => navigate('/expression-studio')}
-            className="w-full bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-100 rounded-2xl p-4 text-left flex items-center gap-3 min-h-[72px] hover:shadow-md transition-shadow"
-          >
-            <div className="w-11 h-11 rounded-xl bg-warm/10 text-warm flex items-center justify-center flex-shrink-0 text-2xl">
-              🎨
-            </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-primary text-base">{S.expressionStudio}</h3>
-              <p className="text-muted text-sm">
-                {lang === 'HI' ? 'बोलो, बनाओ, या शब्द जोड़ो' : 'Speak, draw, or build words'}
-              </p>
-            </div>
-            <ChevronRight className="w-5 h-5 text-muted" />
-          </button>
-        </div>
-
-        {/* ── Your Achievements teaser ─────────────────────── */}
-        <div className="bg-gradient-to-r from-success/10 to-accent/10 rounded-2xl p-4 flex items-center gap-3 border border-success/20">
-          <Star className="w-8 h-8 text-success flex-shrink-0" />
-          <div className="flex-1">
-            <p className="text-primary font-semibold text-base">
-              {lang === 'HI' ? 'आपकी उपलब्धियाँ देखें 🏆' : 'See your achievements 🏆'}
-            </p>
-            <p className="text-muted text-sm">
-              {lang === 'HI' ? 'आपने इस हफ्ते 287 शब्द पढ़े!' : 'You read 287 words this week!'}
-            </p>
-          </div>
+        {/* ── Achievement teaser ─────────────────────────── */}
+        <div className="animate-slideUp stagger-3">
           <button
             onClick={() => navigate('/achievements')}
-            className="bg-success text-white px-3 py-2 rounded-xl text-sm font-semibold min-h-[48px] hover:bg-green-700 transition-colors"
-            aria-label="View Achievement Wall"
+            className="w-full bg-gradient-to-r from-success/10 to-accent/10 rounded-2xl p-4 flex items-center gap-3 border border-success/20 text-left hover:shadow-md transition-all duration-200"
+            aria-label={lang === 'HI' ? 'उपलब्धि दीवार देखें' : 'View Achievement Wall'}
           >
-            {lang === 'HI' ? 'देखें' : 'View'}
+            <Trophy className="w-8 h-8 text-success flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-primary font-semibold text-base">
+                {lang === 'HI' ? 'आपकी उपलब्धियाँ देखें' : 'See your achievements'}
+              </p>
+              <p className="text-muted text-sm">
+                {lang === 'HI' ? 'आपने इस हफ्ते 287 शब्द पढ़े!' : 'You read 287 words this week!'}
+              </p>
+            </div>
+            <ArrowRight className="w-5 h-5 text-muted flex-shrink-0" />
           </button>
         </div>
 
       </div>
 
-      {/* ── Fixed bottom bar ─────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-gray-100 px-4 py-3 flex items-center justify-between z-30 safe-area-bottom">
-        {/* Streak */}
-        <div className="flex items-center gap-1.5">
+      {/* ── Fixed Bottom Bar ──────────────────────────────── */}
+      <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-gray-100 px-4 py-3 flex items-center justify-between z-30">
+
+        {/* Streak display */}
+        <div className="flex items-center gap-1.5 min-h-[48px]">
           <Flame className="w-5 h-5 text-warm" />
           <span className="text-sm font-semibold text-primary">
             {appState.streakDays || 4}
@@ -235,7 +278,7 @@ export default function StudentHome() {
           {lang !== 'HI' && <span className="text-muted text-xs">streak</span>}
         </div>
 
-        {/* Achievement link */}
+        {/* Achievement wall link */}
         <button
           onClick={() => navigate('/achievements')}
           className="flex items-center gap-1.5 min-h-[48px] px-3 text-accent font-semibold text-sm hover:bg-accent/10 rounded-xl transition-colors"
@@ -245,24 +288,32 @@ export default function StudentHome() {
           <span className="hidden sm:inline">{S.achievementWall}</span>
         </button>
 
-        {/* I'm struggling */}
+        {/* "I need help" button */}
         <button
-          onClick={handleStruggleOpen}
-          className="bg-warm text-white rounded-xl px-4 py-2 min-h-[48px] text-sm font-semibold flex items-center gap-1.5 shadow-sm hover:bg-orange-600 transition-colors"
+          onClick={openBreathingOverlay}
+          className="bg-warm text-white rounded-xl px-4 py-2 min-h-[48px] text-sm font-semibold flex items-center gap-1.5 shadow-sm hover:shadow-md transition-all duration-200"
           aria-label={S.iAmStruggling}
         >
-          <span>😰</span>
+          <Heart className="w-4 h-4" />
           <span>{S.iAmStruggling}</span>
         </button>
       </div>
 
-      {/* ── "I'm Struggling" overlay ─────────────────────── */}
-      {showStruggleModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-          <div className="bg-card rounded-2xl p-6 w-full max-w-sm shadow-lg">
+      {/* ── Breathing Overlay ─────────────────────────────── */}
+      {showBreathingOverlay && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 px-4 animate-fadeIn"
+          role="dialog"
+          aria-modal="true"
+          aria-label={lang === 'HI' ? 'साँस लेने का अभ्यास' : 'Breathing exercise'}
+        >
+          <div className="bg-card rounded-2xl p-6 w-full max-w-sm shadow-xl animate-scaleIn">
+
             {/* Header */}
             <div className="text-center mb-6">
-              <h2 className="text-xl font-bold text-primary mb-1">{S.breathe}</h2>
+              <h2 className="text-xl font-bold text-primary mb-1">
+                {S.breathe}
+              </h2>
               <p className="text-muted text-base">
                 {lang === 'HI'
                   ? 'यह बिल्कुल ठीक है। साथ में करते हैं।'
@@ -270,22 +321,26 @@ export default function StudentHome() {
               </p>
             </div>
 
-            {/* Breathing circle */}
-            {!showEasierPrompt ? (
+            {/* Breathing animation or post-breath prompt */}
+            {!showPostBreathPrompt ? (
               <div className="flex flex-col items-center gap-4 my-4">
+                {/* Animated breathing circle */}
                 <div
-                  className={`w-28 h-28 rounded-full bg-gradient-to-br from-accent to-primary flex items-center justify-center shadow-lg
-                    transition-transform duration-[3000ms] ease-in-out ${BREATH_PHASES[breathPhase].scale}`}
+                  className="w-28 h-28 rounded-full bg-gradient-to-br from-accent to-calm flex items-center justify-center shadow-lg animate-breathe"
                   role="img"
                   aria-label={BREATH_PHASES[breathPhase].label}
                 >
                   <Wind className="w-10 h-10 text-white opacity-80" />
                 </div>
-                <p className="text-primary font-semibold text-lg animate-pulse">
+
+                {/* Phase label */}
+                <p className="text-primary font-semibold text-lg">
                   {lang === 'HI'
-                    ? ['सांस लो...', 'रोको...', 'छोड़ो...'][breathPhase]
+                    ? BREATH_PHASES[breathPhase].labelHI
                     : BREATH_PHASES[breathPhase].label}
                 </p>
+
+                {/* Remaining cycles */}
                 <p className="text-muted text-sm">
                   {lang === 'HI'
                     ? `${3 - breathCycles} और चक्र`
@@ -293,21 +348,30 @@ export default function StudentHome() {
                 </p>
               </div>
             ) : (
-              <div className="my-4">
-                <p className="text-primary text-center font-semibold text-base mb-5">
-                  <Sparkles className="w-5 h-5 inline mr-1 text-warm" />
-                  {S.tryEasier}
-                </p>
+              /* Post-breathing prompt with two options */
+              <div className="my-4 animate-fadeIn">
+                <div className="flex items-center justify-center gap-2 mb-5">
+                  <Sparkles className="w-5 h-5 text-warm" />
+                  <p className="text-primary font-semibold text-base">
+                    {S.tryEasier}
+                  </p>
+                </div>
+
                 <div className="space-y-3">
                   <button
-                    onClick={() => { handleStruggleClose(); navigate('/reading-room?easy=true'); }}
-                    className="w-full bg-warm text-white py-3 rounded-xl font-semibold min-h-[48px] hover:bg-orange-600 transition-colors"
+                    onClick={() => {
+                      closeBreathingOverlay();
+                      navigate('/reading-room?easy=true');
+                    }}
+                    className="w-full bg-warm text-white py-3 rounded-xl font-semibold min-h-[48px] hover:shadow-md transition-all duration-200"
+                    aria-label={lang === 'HI' ? 'कुछ आसान करें' : 'Something easier'}
                   >
-                    {lang === 'HI' ? 'हाँ, कुछ आसान करें' : 'Yes, something easier'}
+                    {lang === 'HI' ? 'हाँ, कुछ आसान करें' : 'Something easier'}
                   </button>
                   <button
-                    onClick={handleStruggleClose}
-                    className="w-full border-2 border-accent text-accent py-3 rounded-xl font-semibold min-h-[48px] hover:bg-accent hover:text-white transition-all"
+                    onClick={closeBreathingOverlay}
+                    className="w-full border-2 border-accent text-accent py-3 rounded-xl font-semibold min-h-[48px] hover:bg-accent hover:text-white transition-all duration-200"
+                    aria-label={lang === 'HI' ? 'फिर कोशिश करूँगा' : "I'll try again"}
                   >
                     {lang === 'HI' ? 'मैं फिर कोशिश करूँगा' : "I'll try again"}
                   </button>
@@ -317,8 +381,9 @@ export default function StudentHome() {
 
             {/* Always-visible close */}
             <button
-              onClick={handleStruggleClose}
+              onClick={closeBreathingOverlay}
               className="w-full mt-3 text-muted text-sm py-2 min-h-[48px] hover:text-primary transition-colors"
+              aria-label={lang === 'HI' ? 'बंद करें' : 'Close'}
             >
               {lang === 'HI' ? 'बंद करें' : 'Close'}
             </button>
@@ -327,4 +392,6 @@ export default function StudentHome() {
       )}
     </Layout>
   );
-}
+};
+
+export default StudentHome;

@@ -1,10 +1,9 @@
 // src/components/Layout.jsx
 // Shared shell component — wraps every page.
 // Includes: offline banner, top nav bar, language toggle, companion widget.
-// Do NOT create any other shared component files.
 
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Wifi, WifiOff, Flame, Globe } from 'lucide-react';
 
 /**
  * Layout props:
@@ -36,11 +35,10 @@ export default function Layout({
   const navigate = useNavigate();
 
   // ─── OFFLINE BANNER ──────────────────────────────────────────────────────────
-  // Always rendered — signals offline-first design to judges.
   const OfflineBanner = () => (
-    <div className="bg-primary text-white text-xs text-center py-1 px-3 flex items-center justify-center gap-2">
-      <span>📶</span>
-      <span>
+    <div className="bg-primary/95 backdrop-blur-sm text-white text-xs text-center py-1.5 px-4 flex items-center justify-center gap-2">
+      <WifiOff size={12} className="opacity-80" />
+      <span className="opacity-90">
         {lang === 'HI'
           ? 'ऑफलाइन मोड — कनेक्ट होने पर डेटा सिंक होगा'
           : 'Offline mode — data will sync when connected'}
@@ -53,22 +51,23 @@ export default function Layout({
     <button
       onClick={() => setLanguage && setLanguage(lang === 'EN' ? 'HI' : 'EN')}
       aria-label="Toggle language"
-      className="bg-white border border-gray-200 text-primary font-semibold text-sm px-3 py-1 rounded-lg min-h-[48px] hover:bg-gray-50 transition-colors focus:ring-2 focus:ring-accent"
+      className="flex items-center gap-1.5 bg-white border border-gray-200 text-primary font-semibold text-sm px-3 py-2 rounded-lg min-h-[40px] hover:bg-gray-50 hover:border-gray-300 transition-all duration-200"
     >
-      {lang === 'EN' ? 'हिंदी' : 'EN'}
+      <Globe size={14} className="text-muted" />
+      <span>{lang === 'EN' ? 'हिंदी' : 'EN'}</span>
     </button>
   );
 
   // ─── TOP NAV BAR ─────────────────────────────────────────────────────────────
   const NavBar = () => (
-    <div className="bg-card border-b border-gray-100 px-4 py-2 flex items-center justify-between min-h-[56px] sticky top-0 z-30">
+    <div className="bg-card/95 backdrop-blur-md border-b border-gray-100/80 px-4 py-2 flex items-center justify-between min-h-[56px] sticky top-0 z-30">
       {/* Left: back arrow + title */}
       <div className="flex items-center gap-2">
         {showBack && (
           <button
             onClick={() => navigate(-1)}
             aria-label="Go back"
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors min-h-[48px] min-w-[48px] flex items-center justify-center focus:ring-2 focus:ring-accent"
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
             <ArrowLeft size={20} className="text-primary" />
           </button>
@@ -81,11 +80,12 @@ export default function Layout({
       </div>
 
       {/* Right: streak (student pages) + language toggle */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {!isTeacherPage && streak !== undefined && (
-          <span className="text-sm font-semibold text-warm flex items-center gap-1">
-            🔥 {streak}
-          </span>
+          <div className="flex items-center gap-1 text-sm font-semibold text-warm bg-warm/10 px-2.5 py-1 rounded-lg">
+            <Flame size={14} className="text-warm" />
+            <span>{streak}</span>
+          </div>
         )}
         <LanguageToggle />
       </div>
@@ -93,33 +93,26 @@ export default function Layout({
   );
 
   // ─── COMPANION WIDGET ─────────────────────────────────────────────────────────
-  // Fixed bottom-right, visible on all student-facing pages.
-  // 3 states: idle | happy | encouraging
   const CompanionWidget = () => (
     <div
-      className="fixed bottom-6 right-4 flex flex-col items-center gap-1 z-40"
+      className="fixed bottom-20 right-4 flex flex-col items-center gap-1.5 z-40 animate-fadeIn"
       aria-label={`${companion?.nickname || 'Gyaan'} your learning companion`}
     >
       <div
-        className={`text-4xl transition-transform duration-300 ${
-          companionState === 'happy'
-            ? 'scale-125'
-            : companionState === 'encouraging'
-            ? 'animate-pulse'
-            : ''
+        className={`companion-container ${
+          companionState === 'happy' ? 'happy' : 
+          companionState === 'encouraging' ? 'encouraging' : ''
         }`}
       >
         {companion?.emoji || '🦉'}
       </div>
-      <span className="text-xs text-muted bg-card px-2 py-0.5 rounded-full shadow-sm">
+      <span className="text-[10px] font-medium text-muted bg-card px-2 py-0.5 rounded-full shadow-sm border border-gray-100">
         {companion?.nickname || 'Gyaan'}
       </span>
     </div>
   );
 
   // ─── PAGE MAX-WIDTH ───────────────────────────────────────────────────────────
-  // Student pages: max-w-md (448px, mobile-first)
-  // Teacher pages: max-w-5xl
   const maxWidthClass = isTeacherPage ? 'max-w-5xl' : 'max-w-md';
 
   return (

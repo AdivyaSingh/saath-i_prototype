@@ -1,10 +1,14 @@
 // src/pages/IEPGenerator.jsx
 // Route: /teacher/iep/:id
-// Purpose: End-to-end IEP creation — the single most impactful teacher feature for judges.
-// 4-step flow: Data Summary → Generating (Gemini) → Preview → Approve & Save
+// Purpose: End-to-end IEP creation — the single most impactful teacher feature.
+// 4-step flow: Data Summary → Generating (Gemini) → Preview & Approve → Success
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import {
+  FileText, Check, Edit3, Download, ArrowLeft,
+  Loader2, CheckCircle2, User, AlertTriangle, Search,
+} from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../App';
 import { DEMO_STUDENTS, STRINGS } from '../data';
@@ -12,14 +16,15 @@ import { generateIEP } from '../gemini';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-const sldBadge = {
-  dyslexia:    'bg-blue-100 text-blue-700',
-  dyscalculia: 'bg-purple-100 text-purple-700',
-  dysgraphia:  'bg-orange-100 text-orange-700',
+// SLD badge CSS classes from index.css
+const sldBadgeClass = {
+  dyslexia:    'badge badge-dyslexia',
+  dyscalculia: 'badge badge-dyscalculia',
+  dysgraphia:  'badge badge-dysgraphia',
 };
 
 // Parse Gemini markdown into sections split by "## Heading"
-function parseIEPSections(text) {
+const parseIEPSections = (text) => {
   if (!text) return [];
   const lines = text.split('\n');
   const sections = [];
@@ -35,23 +40,36 @@ function parseIEPSections(text) {
   }
   if (current) sections.push(current);
   return sections;
-}
+};
 
 // Format today's date as "2 June 2025"
-function todayFormatted() {
-  return new Date().toLocaleDateString('en-IN', {
+const todayFormatted = () =>
+  new Date().toLocaleDateString('en-IN', {
     day: 'numeric', month: 'long', year: 'numeric',
   });
-}
 
-// ─── STEP INDICATORS ──────────────────────────────────────────────────────────
-const LOADING_STEPS = [
+// ─── STEP INDICATORS (bilingual) ──────────────────────────────────────────────
+const LOADING_STEPS_EN = [
   'Student profile compiled',
   'Performance summary written',
   'SMART goals generated',
   'Accommodations selected',
-  'IEP ready!',
+  'IEP ready for review',
 ];
+
+const LOADING_STEPS_HI = [
+  'छात्र प्रोफ़ाइल संकलित',
+  'प्रदर्शन सारांश लिखा गया',
+  'SMART लक्ष्य तैयार',
+  'अनुकूलन चुने गए',
+  'IEP समीक्षा के लिए तैयार',
+];
+
+// ─── STEP LABELS ──────────────────────────────────────────────────────────────
+const STEP_LABELS = {
+  EN: ['Data Summary', 'Generating', 'Preview & Approve', 'Saved'],
+  HI: ['डेटा सारांश', 'तैयार हो रहा', 'पूर्वावलोकन', 'सहेजा गया'],
+};
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function IEPGenerator() {
@@ -63,29 +81,23 @@ export default function IEPGenerator() {
 
   const student = DEMO_STUDENTS.find(s => s.id === id);
 
-  // Step state: 1 = Data Summary, 2 = Generating, 3 = Preview, 4 = Approve
+  // Step state: 1 = Data Summary, 2 = Generating, 3 = Preview & Approve, 4 = Success
   const [currentStep, setCurrentStep] = useState(1);
   const [iepText, setIepText]         = useState('');
   const [iepSections, setIepSections] = useState([]);
   const [loadedSteps, setLoadedSteps] = useState([]);
-  const [editingSection, setEditingSection] = useState(null); // index of section being edited
+  const [editingSection, setEditingSection] = useState(null);
   const [sectionTexts, setSectionTexts]     = useState([]);
   const [signature, setSignature]           = useState(teacherName || 'Ms. Lata');
-  const [toastMsg, setToastMsg]           = useState('');
-  const [toastVisible, setToastVisible]     = useState(false);
   // apiUsed: null = not yet called, true = real Gemini succeeded, false = used fallback
   const [apiUsed, setApiUsed]               = useState(null);
 
   // Derived data for Step 1 summary
-  const mastered  = student ? Object.entries(student.masteryMap).filter(([, v]) => v === 'mastered').map(([k]) => k)   : [];
+  const mastered   = student ? Object.entries(student.masteryMap).filter(([, v]) => v === 'mastered').map(([k]) => k) : [];
   const struggling = student ? Object.entries(student.masteryMap).filter(([, v]) => v === 'struggling').map(([k]) => k) : [];
 
-  // ── Show toast notification ─────────────────────────────────────────────
-  const showToast = (msg) => {
-    setToastMsg(msg);
-    setToastVisible(true);
-    setTimeout(() => setToastVisible(false), 3500);
-  };
+  // Loading steps based on language
+  const loadingSteps = language === 'HI' ? LOADING_STEPS_HI : LOADING_STEPS_EN;
 
   // ── Start generation: advance to Step 2 and fire Gemini call ───────────
   const startGeneration = async () => {
@@ -94,24 +106,24 @@ export default function IEPGenerator() {
     setApiUsed(null);
 
     // Stagger the progress indicator steps (1000ms each)
-    LOADING_STEPS.forEach((_, i) => {
+    loadingSteps.forEach((_, i) => {
       setTimeout(() => {
         setLoadedSteps(prev => [...prev, i]);
       }, (i + 1) * 1000);
     });
 
-    // Minimum display time so all 5 steps are always visible
-    const minDisplayTime = LOADING_STEPS.length * 1000 + 600;
+    // Minimum display time so all steps are always visible
+    const minDisplayTime = loadingSteps.length * 1000 + 600;
     const minWaitPromise = new Promise(resolve => setTimeout(resolve, minDisplayTime));
 
-    // Fire Gemini call — race it against nothing, just await the real result
+    // Fire Gemini call
     const geminiResult = await generateIEP(student);
 
     // Mark whether we got a real response or fell back
     setApiUsed(geminiResult !== null);
     const text = geminiResult || getFallbackIEP(student);
 
-    // Now wait for BOTH: Gemini done AND minimum display time elapsed
+    // Wait for BOTH: Gemini done AND minimum display time elapsed
     await minWaitPromise;
 
     const sections = parseIEPSections(text);
@@ -121,13 +133,9 @@ export default function IEPGenerator() {
     setCurrentStep(3);
   };
 
-  // ── Approve IEP ─────────────────────────────────────────────────────────
+  // ── Approve IEP — single action from Step 3 → Step 4 ───────────────────
   const handleApprove = () => {
     setCurrentStep(4);
-    showToast(`✓ IEP saved to ${student?.name}'s profile`);
-    setTimeout(() => {
-      showToast('PDF download will be available in the full app');
-    }, 1200);
   };
 
   // ── Guard: student not found ────────────────────────────────────────────
@@ -141,19 +149,26 @@ export default function IEPGenerator() {
         lang={language}
         setLanguage={(lang) => updateState({ language: lang })}
       >
-        <div className="text-center py-16">
-          <p className="text-5xl mb-4">😕</p>
-          <p className="text-primary font-semibold text-lg">Student not found</p>
+        <div className="text-center py-16 animate-fadeIn">
+          <Search size={48} className="text-muted mx-auto mb-4 opacity-50" />
+          <p className="text-primary font-semibold text-lg">
+            {language === 'HI' ? 'छात्र नहीं मिला' : 'Student not found'}
+          </p>
           <button
             onClick={() => navigate('/teacher')}
-            className="mt-4 bg-calm text-white font-semibold py-2.5 px-6 rounded-xl min-h-[48px] hover:bg-teal-600 transition-colors"
+            aria-label="Back to dashboard"
+            className="btn-calm mt-4"
           >
-            Back to Dashboard
+            <ArrowLeft size={16} />
+            {language === 'HI' ? 'डैशबोर्ड पर वापस जाएं' : 'Back to Dashboard'}
           </button>
         </div>
       </Layout>
     );
   }
+
+  // ── Step labels ─────────────────────────────────────────────────────────
+  const stepLabels = STEP_LABELS[language] || STEP_LABELS.EN;
 
   return (
     <Layout
@@ -165,18 +180,7 @@ export default function IEPGenerator() {
       lang={language}
       setLanguage={(lang) => updateState({ language: lang })}
     >
-      {/* ── Toast notification ────────────────────────────────────────────── */}
-      <div
-        className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-primary text-white text-sm font-semibold px-5 py-3 rounded-xl shadow-lg transition-all duration-300 ${
-          toastVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
-        }`}
-        role="status"
-        aria-live="polite"
-      >
-        {toastMsg}
-      </div>
       {/* ── Subtle API status dot (bottom-left, only visible after generation) ── */}
-      {/* Green = real Gemini API used. Orange = fallback/hardcoded. Invisible to judges. */}
       {apiUsed !== null && (
         <div
           className="fixed bottom-4 left-4 z-50 flex items-center gap-1.5"
@@ -186,23 +190,30 @@ export default function IEPGenerator() {
         </div>
       )}
 
-
+      {/* ── Step Progress Bar ──────────────────────────────────────────────── */}
       <div className="flex items-center gap-1 mb-6">
         {[1, 2, 3, 4].map(step => (
           <div key={step} className="flex items-center gap-1 flex-1">
-            <div
-              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all duration-300 ${
-                currentStep > step
-                  ? 'bg-success text-white'
-                  : currentStep === step
-                  ? 'bg-calm text-white'
-                  : 'bg-gray-200 text-gray-500'
-              }`}
-            >
-              {currentStep > step ? '✓' : step}
+            <div className="flex flex-col items-center gap-1">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all duration-300 ${
+                  currentStep > step
+                    ? 'bg-success text-white'
+                    : currentStep === step
+                    ? 'bg-calm text-white'
+                    : 'bg-gray-200 text-gray-500'
+                }`}
+              >
+                {currentStep > step ? <Check size={14} /> : step}
+              </div>
+              <span className={`text-[10px] font-medium whitespace-nowrap ${
+                currentStep >= step ? 'text-primary' : 'text-muted'
+              }`}>
+                {stepLabels[step - 1]}
+              </span>
             </div>
             {step < 4 && (
-              <div className={`flex-1 h-1 rounded-full transition-all duration-500 ${currentStep > step ? 'bg-success' : 'bg-gray-200'}`} />
+              <div className={`flex-1 h-1 rounded-full transition-all duration-500 mb-4 ${currentStep > step ? 'bg-success' : 'bg-gray-200'}`} />
             )}
           </div>
         ))}
@@ -212,7 +223,7 @@ export default function IEPGenerator() {
           STEP 1 — DATA SUMMARY
           ═══════════════════════════════════════════════════════════════════ */}
       {currentStep === 1 && (
-        <div>
+        <div className="animate-fadeIn">
           <h1 className="text-xl font-bold text-primary mb-1">
             {language === 'HI'
               ? `${student.name} के पिछले 6 हफ्तों के डेटा के आधार पर:`
@@ -226,16 +237,16 @@ export default function IEPGenerator() {
           <div className="bg-card rounded-2xl shadow-sm border border-gray-100 p-5 mb-5">
             {/* Student header */}
             <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-xl font-bold text-primary">
-                {student.name[0]}
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                <User size={24} className="text-primary" />
               </div>
               <div>
                 <p className="font-bold text-primary text-lg leading-tight">{student.name}</p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${sldBadge[student.sldType] || 'bg-gray-100 text-gray-600'}`}>
+                  <span className={sldBadgeClass[student.sldType] || 'badge bg-gray-100 text-gray-600'}>
                     {student.sldType}
                   </span>
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">
+                  <span className="badge bg-gray-100 text-gray-600 border border-gray-200">
                     {student.severity}
                   </span>
                   <span className="text-xs text-muted">
@@ -247,8 +258,8 @@ export default function IEPGenerator() {
 
             {/* Strengths */}
             <div className="mb-4">
-              <p className="text-sm font-semibold text-success mb-2 flex items-center gap-1">
-                <span>✅</span>
+              <p className="text-sm font-semibold text-green-700 mb-2 flex items-center gap-1.5">
+                <CheckCircle2 size={14} />
                 <span>{language === 'HI' ? 'ताकत (सीखा गया)' : 'Strengths (Mastered)'}</span>
               </p>
               {mastered.length > 0 ? (
@@ -268,8 +279,8 @@ export default function IEPGenerator() {
 
             {/* Support areas */}
             <div className="mb-4">
-              <p className="text-sm font-semibold text-warm mb-2 flex items-center gap-1">
-                <span>⚠️</span>
+              <p className="text-sm font-semibold text-warm mb-2 flex items-center gap-1.5">
+                <AlertTriangle size={14} />
                 <span>{language === 'HI' ? 'सहायता क्षेत्र' : 'Support Areas'}</span>
               </p>
               {struggling.length > 0 ? (
@@ -289,8 +300,9 @@ export default function IEPGenerator() {
 
             {/* Error patterns */}
             <div>
-              <p className="text-sm font-semibold text-primary mb-2">
-                {language === 'HI' ? '🔍 त्रुटि पैटर्न' : '🔍 Key Error Patterns'}
+              <p className="text-sm font-semibold text-primary mb-2 flex items-center gap-1.5">
+                <Search size={14} className="text-muted" />
+                <span>{language === 'HI' ? 'त्रुटि पैटर्न' : 'Key Error Patterns'}</span>
               </p>
               <ul className="space-y-1.5">
                 {student.errorPatterns.map((ep, i) => (
@@ -311,15 +323,17 @@ export default function IEPGenerator() {
             <button
               onClick={startGeneration}
               aria-label="Yes, generate IEP"
-              className="flex-1 bg-calm text-white font-semibold py-3 px-4 rounded-xl min-h-[48px] hover:bg-teal-600 transition-colors shadow-sm"
+              className="flex-1 btn-calm"
             >
-              {language === 'HI' ? 'हाँ, IEP बनाएं ✓' : 'Yes, generate IEP ✓'}
+              <Check size={16} />
+              {language === 'HI' ? 'हाँ, IEP बनाएं' : 'Yes, generate IEP'}
             </button>
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => navigate('/teacher')}
               aria-label="Go back to edit"
-              className="flex-1 border-2 border-accent text-accent font-semibold py-3 px-4 rounded-xl min-h-[48px] hover:bg-accent hover:text-white transition-all"
+              className="flex-1 btn-ghost"
             >
+              <Edit3 size={16} />
               {language === 'HI' ? 'पहले संपादित करें' : 'Edit first'}
             </button>
           </div>
@@ -330,9 +344,11 @@ export default function IEPGenerator() {
           STEP 2 — GENERATING (Gemini loading)
           ═══════════════════════════════════════════════════════════════════ */}
       {currentStep === 2 && (
-        <div className="text-center py-6">
+        <div className="text-center py-6 animate-fadeIn">
           {/* Companion in encouraging state */}
-          <div className="text-6xl animate-pulse mb-4">🦉</div>
+          <div className="companion-container encouraging mx-auto mb-4">
+            {student.companion?.emoji || '🦉'}
+          </div>
 
           <h2 className="text-xl font-semibold text-primary mb-2">
             {language === 'HI'
@@ -347,17 +363,17 @@ export default function IEPGenerator() {
 
           {/* Staggered progress steps */}
           <div className="bg-card rounded-2xl shadow-sm border border-gray-100 p-5 text-left max-w-md mx-auto">
-            {LOADING_STEPS.map((step, i) => (
+            {loadingSteps.map((step, i) => (
               <div
                 key={i}
                 className={`flex items-center gap-3 py-2.5 transition-all duration-500 ${
                   loadedSteps.includes(i) ? 'opacity-100' : 'opacity-20'
                 }`}
               >
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-colors duration-300 ${
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-colors duration-300 ${
                   loadedSteps.includes(i) ? 'bg-success text-white' : 'bg-gray-200 text-gray-400'
                 }`}>
-                  {loadedSteps.includes(i) ? '✓' : (i + 1)}
+                  {loadedSteps.includes(i) ? <Check size={12} /> : (i + 1)}
                 </span>
                 <span className={`text-sm font-medium transition-colors duration-300 ${
                   loadedSteps.includes(i) ? 'text-primary' : 'text-muted'
@@ -371,12 +387,13 @@ export default function IEPGenerator() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          STEP 3 — PREVIEW IEP
+          STEP 3 — PREVIEW & APPROVE (combined — no separate Step 4 approve)
           ═══════════════════════════════════════════════════════════════════ */}
       {currentStep === 3 && (
-        <div>
+        <div className="animate-fadeIn">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-primary">
+            <h2 className="text-lg font-bold text-primary flex items-center gap-2">
+              <FileText size={18} className="text-calm" />
               {language === 'HI' ? 'IEP पूर्वावलोकन' : 'IEP Preview'}
             </h2>
             <span className="text-xs bg-success/10 text-success font-semibold px-3 py-1 rounded-full border border-success/20">
@@ -406,12 +423,14 @@ export default function IEPGenerator() {
                       <p className="text-sm font-bold text-primary">{section.heading}</p>
                       <button
                         onClick={() => setEditingSection(editingSection === i ? null : i)}
-                        aria-label={editingSection === i ? 'Save section' : 'Edit section'}
-                        className="text-xs text-calm font-semibold border border-calm/30 px-2 py-0.5 rounded-lg hover:bg-teal-50 transition-colors min-h-[28px]"
+                        aria-label={editingSection === i ? `Save ${section.heading}` : `Edit ${section.heading}`}
+                        className="flex items-center gap-1 text-xs text-calm font-semibold border border-calm/30 px-2 py-0.5 rounded-lg hover:bg-teal-50 transition-colors min-h-[28px]"
                       >
-                        {editingSection === i
-                          ? (language === 'HI' ? 'सहेजें' : 'Save')
-                          : (language === 'HI' ? 'संपादित करें' : 'Edit')}
+                        {editingSection === i ? (
+                          <><Check size={12} /> {language === 'HI' ? 'सहेजें' : 'Save'}</>
+                        ) : (
+                          <><Edit3 size={12} /> {language === 'HI' ? 'संपादित करें' : 'Edit'}</>
+                        )}
                       </button>
                     </div>
                     {/* Section body */}
@@ -467,32 +486,34 @@ export default function IEPGenerator() {
             </div>
           </div>
 
-          {/* Advance to Step 4 */}
+          {/* Approve IEP — single button that approves AND advances to success */}
           <button
-            onClick={() => setCurrentStep(4)}
+            onClick={handleApprove}
             aria-label="Approve and save IEP"
-            className="w-full bg-calm text-white font-semibold py-3 px-6 rounded-xl min-h-[48px] hover:bg-teal-600 transition-colors shadow-sm mb-3"
+            className="w-full btn-calm mb-3"
           >
-            {language === 'HI' ? 'IEP अनुमोदित करें →' : 'Approve IEP →'}
+            <Check size={16} />
+            {language === 'HI' ? 'IEP अनुमोदित करें' : 'Approve IEP'}
           </button>
           <button
             onClick={() => setCurrentStep(1)}
             aria-label="Back to data summary"
-            className="w-full border-2 border-accent text-accent font-semibold py-2.5 px-6 rounded-xl min-h-[48px] hover:bg-accent hover:text-white transition-all"
+            className="w-full btn-ghost"
           >
-            {language === 'HI' ? '← पुनः उत्पन्न करें' : '← Regenerate'}
+            <ArrowLeft size={16} />
+            {language === 'HI' ? 'पुनः उत्पन्न करें' : 'Regenerate'}
           </button>
         </div>
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          STEP 4 — APPROVE & SAVE
+          STEP 4 — SUCCESS (post-approve confirmation)
           ═══════════════════════════════════════════════════════════════════ */}
       {currentStep === 4 && (
-        <div className="text-center py-8">
+        <div className="text-center py-8 animate-fadeIn">
           {/* Success illustration */}
-          <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center text-5xl mx-auto mb-5">
-            ✅
+          <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-5">
+            <CheckCircle2 size={40} className="text-success" />
           </div>
           <h2 className="text-xl font-bold text-primary mb-2">
             {language === 'HI' ? 'IEP तैयार है!' : 'IEP Ready!'}
@@ -514,28 +535,45 @@ export default function IEPGenerator() {
               {language === 'HI' ? 'IEP सारांश' : 'IEP Summary'}
             </p>
             <div className="space-y-1.5 text-xs text-muted">
-              <p>👤 {language === 'HI' ? 'छात्र:' : 'Student:'} <span className="text-primary font-semibold">{student.name}</span></p>
-              <p>📋 {language === 'HI' ? 'SLD प्रकार:' : 'SLD Type:'} <span className="text-primary font-semibold capitalize">{student.sldType}</span></p>
-              <p>🏫 {language === 'HI' ? 'विद्यालय:' : 'School:'} <span className="text-primary font-semibold">{student.school}</span></p>
-              <p>📅 {language === 'HI' ? 'तारीख:' : 'Date:'} <span className="text-primary font-semibold">{todayFormatted()}</span></p>
-              <p>✍️ {language === 'HI' ? 'हस्ताक्षर:' : 'Signed by:'} <span className="text-primary font-semibold">{signature}</span></p>
+              <p className="flex items-center gap-2">
+                <User size={12} className="flex-shrink-0" />
+                {language === 'HI' ? 'छात्र:' : 'Student:'} <span className="text-primary font-semibold">{student.name}</span>
+              </p>
+              <p className="flex items-center gap-2">
+                <FileText size={12} className="flex-shrink-0" />
+                {language === 'HI' ? 'SLD प्रकार:' : 'SLD Type:'} <span className="text-primary font-semibold capitalize">{student.sldType}</span>
+              </p>
+              <p className="flex items-center gap-2">
+                <FileText size={12} className="flex-shrink-0" />
+                {language === 'HI' ? 'तारीख:' : 'Date:'} <span className="text-primary font-semibold">{todayFormatted()}</span>
+              </p>
+              <p className="flex items-center gap-2">
+                <Edit3 size={12} className="flex-shrink-0" />
+                {language === 'HI' ? 'हस्ताक्षर:' : 'Signed by:'} <span className="text-primary font-semibold">{signature}</span>
+              </p>
             </div>
           </div>
 
-          <button
-            onClick={handleApprove}
-            aria-label="Approve IEP"
-            className="w-full bg-calm text-white font-semibold py-3 px-6 rounded-xl min-h-[48px] hover:bg-teal-600 transition-colors shadow-sm mb-3"
-          >
-            {language === 'HI' ? '✓ IEP अनुमोदित करें' : '✓ Approve IEP'}
-          </button>
-          <button
-            onClick={() => navigate('/teacher')}
-            aria-label="Back to teacher dashboard"
-            className="w-full border-2 border-accent text-accent font-semibold py-2.5 px-6 rounded-xl min-h-[48px] hover:bg-accent hover:text-white transition-all"
-          >
-            {language === 'HI' ? '← डैशबोर्ड पर वापस जाएं' : '← Back to Dashboard'}
-          </button>
+          <div className="flex gap-3 max-w-sm mx-auto">
+            <button
+              onClick={() => navigate('/teacher')}
+              aria-label="Back to teacher dashboard"
+              className="flex-1 btn-calm"
+            >
+              <ArrowLeft size={16} />
+              {language === 'HI' ? 'डैशबोर्ड' : 'Dashboard'}
+            </button>
+            <button
+              onClick={() => {
+                // Simulate PDF download
+              }}
+              aria-label="Download IEP as PDF"
+              className="flex-1 btn-ghost"
+            >
+              <Download size={16} />
+              {language === 'HI' ? 'PDF डाउनलोड' : 'Download PDF'}
+            </button>
+          </div>
         </div>
       )}
 
