@@ -17,7 +17,7 @@ import { useApp } from '../App';
 import { COMPANIONS, STRINGS } from '../data';
 import Layout from '../components/Layout';
 
-// ─── Language options (UI-level meta choices — not from data.js) ──────────────
+// ─── Language options (UI-level meta choices - not from data.js) ──────────────
 const LANGUAGE_OPTIONS = [
   { code: 'HI', label: 'Hindi',   script: 'हिंदी'   },
   { code: 'EN', label: 'English', script: 'English'  },
@@ -195,7 +195,7 @@ const Onboarding = () => {
         <ProgressDots />
 
         {/* ══════════════════════════════════════════════════════════════════════
-            STEP 1 — Profile Setup
+            STEP 1 - Profile Setup
         ══════════════════════════════════════════════════════════════════════ */}
         {step === 1 && (
           <div className="animate-fadeIn space-y-6">
@@ -345,7 +345,7 @@ const Onboarding = () => {
                   )}
                 </button>
 
-                {/* Skip link — subtle, not a full button */}
+                {/* Skip link - subtle, not a full button */}
                 <button
                   onClick={() => setStep(2)}
                   className="w-full text-center text-sm font-medium text-muted hover:text-accent
@@ -376,7 +376,7 @@ const Onboarding = () => {
         )}
 
         {/* ══════════════════════════════════════════════════════════════════════
-            STEP 2 — Companion Selection
+            STEP 2 - Companion Selection
         ══════════════════════════════════════════════════════════════════════ */}
         {step === 2 && (
           <div className="animate-fadeIn space-y-6">
@@ -386,7 +386,7 @@ const Onboarding = () => {
               <p className="text-muted text-base leading-relaxed">{S.companionTagline}</p>
             </div>
 
-            {/* Companion grid — 2×3 */}
+            {/* Companion grid - 2×3 */}
             <div
               className="grid grid-cols-2 gap-3"
               role="group"
@@ -405,7 +405,7 @@ const Onboarding = () => {
                         ? 'border-warm bg-warm/5 shadow-md scale-[1.02]'
                         : 'border-gray-200 bg-card hover:border-warm/50 hover:bg-warm/5'
                     }`}
-                    aria-label={`${companion.name} — ${companion.description}`}
+                    aria-label={`${companion.name} - ${companion.description}`}
                     aria-pressed={isSelected}
                   >
                     {/* Companion emoji in companion-container */}
@@ -427,7 +427,7 @@ const Onboarding = () => {
               })}
             </div>
 
-            {/* Nickname input — appears after companion selection */}
+            {/* Nickname input - appears after companion selection */}
             {selectedCompanion && (
               <div className="card-elevated p-5 space-y-3 animate-slideUp">
                 <label className="block text-sm font-semibold text-primary">

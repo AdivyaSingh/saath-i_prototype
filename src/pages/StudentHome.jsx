@@ -1,6 +1,6 @@
 // src/pages/StudentHome.jsx
 // Route: /home
-// Daily landing screen — activities, streak, companion, breathing overlay.
+// Daily landing screen - activities, streak, companion, breathing overlay.
 // Emotionally safe: no scores, no SLD labels shown to the child.
 
 import { useState, useEffect } from 'react';
@@ -107,7 +107,7 @@ const StudentHome = () => {
 
       timeout = setTimeout(() => {
         if (nextCycles >= 3) {
-          // 3 cycles complete — show post-breath prompt
+          // 3 cycles complete - show post-breath prompt
           setShowPostBreathPrompt(true);
           return;
         }

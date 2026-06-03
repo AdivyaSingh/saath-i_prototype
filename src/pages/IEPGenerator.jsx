@@ -1,6 +1,6 @@
 // src/pages/IEPGenerator.jsx
 // Route: /teacher/iep/:id
-// Purpose: End-to-end IEP creation — the single most impactful teacher feature.
+// Purpose: End-to-end IEP creation - the single most impactful teacher feature.
 // 4-step flow: Data Summary → Generating (Gemini) → Preview & Approve → Success
 
 import { useState } from 'react';
@@ -133,7 +133,7 @@ export default function IEPGenerator() {
     setCurrentStep(3);
   };
 
-  // ── Approve IEP — single action from Step 3 → Step 4 ───────────────────
+  // ── Approve IEP - single action from Step 3 → Step 4 ───────────────────
   const handleApprove = () => {
     setCurrentStep(4);
   };
@@ -172,7 +172,7 @@ export default function IEPGenerator() {
 
   return (
     <Layout
-      title={`${S.generateIEP} — ${student.name}`}
+      title={`${S.generateIEP} - ${student.name}`}
       showNav
       showBack
       showCompanion={false}
@@ -220,7 +220,7 @@ export default function IEPGenerator() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          STEP 1 — DATA SUMMARY
+          STEP 1 - DATA SUMMARY
           ═══════════════════════════════════════════════════════════════════ */}
       {currentStep === 1 && (
         <div className="animate-fadeIn">
@@ -341,7 +341,7 @@ export default function IEPGenerator() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          STEP 2 — GENERATING (Gemini loading)
+          STEP 2 - GENERATING (Gemini loading)
           ═══════════════════════════════════════════════════════════════════ */}
       {currentStep === 2 && (
         <div className="text-center py-6 animate-fadeIn">
@@ -387,7 +387,7 @@ export default function IEPGenerator() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          STEP 3 — PREVIEW & APPROVE (combined — no separate Step 4 approve)
+          STEP 3 - PREVIEW & APPROVE (combined - no separate Step 4 approve)
           ═══════════════════════════════════════════════════════════════════ */}
       {currentStep === 3 && (
         <div className="animate-fadeIn">
@@ -406,7 +406,7 @@ export default function IEPGenerator() {
             {/* Letterhead */}
             <div className="bg-gradient-to-r from-primary to-accent px-6 py-4">
               <p className="text-white font-bold text-base tracking-wide">
-                SAATHI — Individualised Education Plan
+                SAATHI - Individualised Education Plan
               </p>
               <p className="text-blue-200 text-xs mt-0.5">{student.school}</p>
               <p className="text-blue-100 text-xs mt-0.5">
@@ -486,7 +486,7 @@ export default function IEPGenerator() {
             </div>
           </div>
 
-          {/* Approve IEP — single button that approves AND advances to success */}
+          {/* Approve IEP - single button that approves AND advances to success */}
           <button
             onClick={handleApprove}
             aria-label="Approve and save IEP"
@@ -507,7 +507,7 @@ export default function IEPGenerator() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          STEP 4 — SUCCESS (post-approve confirmation)
+          STEP 4 - SUCCESS (post-approve confirmation)
           ═══════════════════════════════════════════════════════════════════ */}
       {currentStep === 4 && (
         <div className="text-center py-8 animate-fadeIn">

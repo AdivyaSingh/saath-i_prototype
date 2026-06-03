@@ -1,6 +1,6 @@
 // src/pages/ExpressionStudio.jsx
 // Route: /expression-studio
-// Dysgraphia activity — voice recording, canvas drawing, and word tile modes.
+// Dysgraphia activity - voice recording, canvas drawing, and word tile modes.
 // Supports multiple prompts, AI prompt generation, Hindi mode.
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -153,7 +153,7 @@ export default function ExpressionStudio() {
           <div>
             <h1 className="text-xl font-bold text-primary">{S.expressionStudio}</h1>
             <p className="text-muted text-sm">
-              {lang === 'HI' ? 'अपनी कहानी बताओ — अपने तरीके से!' : 'Tell your story — your way!'}
+              {lang === 'HI' ? 'अपनी कहानी बताओ - अपने तरीके से!' : 'Tell your story - your way!'}
             </p>
           </div>
         </div>
@@ -298,7 +298,7 @@ export default function ExpressionStudio() {
 
                 {/* Author */}
                 <p className="text-muted text-sm text-right mt-3 font-medium">
-                  — {appState.studentName || 'Arjun'}
+                  - {appState.studentName || 'Arjun'}
                 </p>
 
                 {/* Companion celebration message */}
@@ -306,8 +306,8 @@ export default function ExpressionStudio() {
                   <span className="text-2xl flex-shrink-0">{appState.companion?.emoji || '🦉'}</span>
                   <p className="text-primary text-base font-medium">
                     {lang === 'HI'
-                      ? `"${appState.companion?.nickname || 'Gyaan'} कहता है — तुमने पूरी कहानी सुनाई! आज तुम लेखक हो!"`
-                      : `"${appState.companion?.nickname || 'Gyaan'} says — You wrote a whole story! You're an author today!"`}
+                      ? `"${appState.companion?.nickname || 'Gyaan'} कहता है - तुमने पूरी कहानी सुनाई! आज तुम लेखक हो!"`
+                      : `"${appState.companion?.nickname || 'Gyaan'} says - You wrote a whole story! You're an author today!"`}
                   </p>
                 </div>
 
@@ -425,7 +425,7 @@ const VoiceMode = ({ lang, onStoryReady }) => {
 
   return (
     <div className="bg-card rounded-2xl border border-gray-100 shadow-sm p-5 mb-4 animate-fadeIn">
-      {/* Record button — large, professional circle */}
+      {/* Record button - large, professional circle */}
       <div className="flex flex-col items-center gap-4 mb-4">
         <button
           onClick={recording ? stopRecording : startRecording}
@@ -443,7 +443,7 @@ const VoiceMode = ({ lang, onStoryReady }) => {
           )}
         </button>
 
-        {/* Waveform bars — CSS animated */}
+        {/* Waveform bars - CSS animated */}
         {recording && (
           <div className="flex items-end gap-1 h-8" aria-hidden="true">
             {[0.4, 0.9, 0.6, 1, 0.7, 0.5, 0.85].map((h, i) => (

@@ -1,6 +1,6 @@
 // src/pages/NumberWorld.jsx
 // Route: /number-world
-// Dyscalculia activity — object-first maths with addition and comparison tabs.
+// Dyscalculia activity - object-first maths with addition and comparison tabs.
 // No timers, no scores, emotionally safe design.
 
 import { useState, useEffect, useCallback } from 'react';
@@ -367,7 +367,7 @@ const AdditionActivity = ({ lang, S, companion, setCompanionState, classLevel })
         </div>
       </div>
 
-      {/* Phase 2 — live counter */}
+      {/* Phase 2 - live counter */}
       {phase === 2 && (
         <div className="text-center mb-3">
           <p className="text-muted text-sm mb-1">
@@ -392,7 +392,7 @@ const AdditionActivity = ({ lang, S, companion, setCompanionState, classLevel })
         </div>
       )}
 
-      {/* Phase 3 — equation reveal */}
+      {/* Phase 3 - equation reveal */}
       {phase === 3 && (
         <div className={`text-center transition-opacity duration-500 ${equationVisible ? 'opacity-100' : 'opacity-0'}`}>
           <p className="text-muted text-sm mb-2">
@@ -422,7 +422,7 @@ const AdditionActivity = ({ lang, S, companion, setCompanionState, classLevel })
         </button>
       )}
 
-      {/* Phase 3 — reset */}
+      {/* Phase 3 - reset */}
       {phase === 3 && (
         <button
           onClick={resetActivity}
@@ -434,7 +434,7 @@ const AdditionActivity = ({ lang, S, companion, setCompanionState, classLevel })
         </button>
       )}
 
-      {/* Already counted hint — gentle shake feedback */}
+      {/* Already counted hint - gentle shake feedback */}
       {shakingId && (
         <p className="text-warm text-sm text-center mt-2 font-medium animate-slideUp">
           {lang === 'HI' ? 'इसे तो तुमने पहले ही गिन लिया!' : 'You already counted that one!'}
@@ -674,7 +674,7 @@ const NumberTown = ({ lang }) => {
       <div className="flex gap-3 items-end justify-center">
         {concepts.map((c, i) => (
           <div key={i} className="flex flex-col items-center gap-2">
-            {/* Building box — solid gradient if done, outline if in-progress */}
+            {/* Building box - solid gradient if done, outline if in-progress */}
             <div
               className={`w-16 h-20 rounded-xl flex items-center justify-center transition-all ${
                 c.done

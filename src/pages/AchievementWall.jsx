@@ -164,15 +164,15 @@ const AchievementWall = () => {
             <Sparkles className="w-12 h-12 text-muted mx-auto mb-3" />
             <p className="text-muted text-lg">
               {lang === 'HI'
-                ? 'अभी कोई उपलब्धि नहीं — चलते रहो!'
-                : 'No achievements here yet — keep going!'}
+                ? 'अभी कोई उपलब्धि नहीं - चलते रहो!'
+                : 'No achievements here yet - keep going!'}
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 mb-6">
             {filtered.map((achievement, idx) => {
               const title = lang === 'HI' ? achievement.titleHI : achievement.title;
-              const shareText = encodeURIComponent(`${achievement.title} — Saath-i`);
+              const shareText = encodeURIComponent(`${achievement.title} - Saath-i`);
               const unlocked = isUnlocked(achievement, activitiesCompleted);
               const style = categoryStyles[achievement.category] || categoryStyles.reading;
 
@@ -223,7 +223,7 @@ const AchievementWall = () => {
                     {title}
                   </p>
 
-                  {/* WhatsApp share link — only for unlocked */}
+                  {/* WhatsApp share link - only for unlocked */}
                   {unlocked ? (
                     <a
                       href={`https://wa.me/?text=${shareText}`}

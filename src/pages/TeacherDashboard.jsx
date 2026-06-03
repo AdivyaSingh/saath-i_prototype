@@ -1,7 +1,7 @@
 // src/pages/TeacherDashboard.jsx
 // Route: /teacher
 // Two states: Login (teacherLoggedIn=false) → Dashboard (teacherLoggedIn=true)
-// Student profile panel is a slide-in overlay within this page — not a separate route.
+// Student profile panel is a slide-in overlay within this page - not a separate route.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -48,7 +48,7 @@ const masteryLabel = {
   not_started: { EN: 'Not Started', HI: 'शुरू नहीं' },
 };
 
-// Trend icons — Lucide components
+// Trend icons - Lucide components
 const trendConfig = {
   improving: { Icon: TrendingUp,   cls: 'text-green-600' },
   stable:    { Icon: Minus,        cls: 'text-muted' },
@@ -111,17 +111,17 @@ const deriveStats = (students, language) => {
   ];
 };
 
-// Portfolio items per student — maps student id → portfolio entries
+// Portfolio items per student - maps student id → portfolio entries
 const STUDENT_PORTFOLIO = {
   student_001: [
-    { type: 'voice', titleEN: "The Clever Crow — Retelling", titleHI: "चतुर कौआ — पुनर्कथन", dateEN: 'Reading Room — May 2025', dateHI: 'पठन कक्ष — मई 2025' },
-    { type: 'story', titleEN: "Meera's Magical Door", titleHI: "मीरा का जादुई दरवाज़ा", dateEN: 'Expression Studio — June 2025', dateHI: 'अभिव्यक्ति स्टूडियो — जून 2025' },
+    { type: 'voice', titleEN: "The Clever Crow - Retelling", titleHI: "चतुर कौआ - पुनर्कथन", dateEN: 'Reading Room - May 2025', dateHI: 'पठन कक्ष - मई 2025' },
+    { type: 'story', titleEN: "Meera's Magical Door", titleHI: "मीरा का जादुई दरवाज़ा", dateEN: 'Expression Studio - June 2025', dateHI: 'अभिव्यक्ति स्टूडियो - जून 2025' },
   ],
   student_002: [
-    { type: 'image', titleEN: "Object Counting — 14 stars", titleHI: "वस्तु गिनती — 14 तारे", dateEN: 'Number World — May 2025', dateHI: 'संख्या जगत — मई 2025' },
+    { type: 'image', titleEN: "Object Counting - 14 stars", titleHI: "वस्तु गिनती - 14 तारे", dateEN: 'Number World - May 2025', dateHI: 'संख्या जगत - मई 2025' },
   ],
   student_003: [
-    { type: 'voice', titleEN: "Lion and Mouse — Retelling", titleHI: "शेर और चूहा — पुनर्कथन", dateEN: 'Reading Room — April 2025', dateHI: 'पठन कक्ष — अप्रैल 2025' },
+    { type: 'voice', titleEN: "Lion and Mouse - Retelling", titleHI: "शेर और चूहा - पुनर्कथन", dateEN: 'Reading Room - April 2025', dateHI: 'पठन कक्ष - अप्रैल 2025' },
   ],
 };
 
@@ -253,7 +253,7 @@ export default function TeacherDashboard() {
   const stats = deriveStats(allStudents, language);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STATE 1 — LOGIN FORM
+  // STATE 1 - LOGIN FORM
   // ─────────────────────────────────────────────────────────────────────────
   if (!teacherLoggedIn) {
     return (
@@ -266,7 +266,7 @@ export default function TeacherDashboard() {
         setLanguage={(lang) => updateState({ language: lang })}
       >
         <div className="min-h-[calc(100vh-32px)] flex flex-col items-center justify-center px-4 py-8">
-          {/* Language toggle — rendered outside nav since showNav=false */}
+          {/* Language toggle - rendered outside nav since showNav=false */}
           <div className="absolute top-8 right-4">
             <button
               onClick={() => updateState({ language: language === 'EN' ? 'HI' : 'EN' })}
@@ -369,7 +369,7 @@ export default function TeacherDashboard() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STATE 2 — TEACHER DASHBOARD
+  // STATE 2 - TEACHER DASHBOARD
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <Layout
@@ -523,7 +523,7 @@ export default function TeacherDashboard() {
 
               {/* Last active */}
               <p className="text-xs text-muted mb-1">
-                {language === 'HI' ? 'अंतिम सक्रिय:' : 'Last active:'} {student.lastActive || '—'}
+                {language === 'HI' ? 'अंतिम सक्रिय:' : 'Last active:'} {student.lastActive || '-'}
               </p>
 
               {/* Streak */}
@@ -914,8 +914,8 @@ export default function TeacherDashboard() {
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted">
                         {language === 'HI'
-                          ? 'AI द्वारा — कृपया समीक्षा करें'
-                          : 'AI-generated — please review before acting'}
+                          ? 'AI द्वारा - कृपया समीक्षा करें'
+                          : 'AI-generated - please review before acting'}
                       </p>
                       <button
                         onClick={() => setEditingSuggestion(prev => !prev)}

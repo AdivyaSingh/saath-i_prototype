@@ -1,6 +1,6 @@
 // src/pages/ReadingRoom.jsx
 // Route: /reading-room
-// Core Dyslexia activity — passage reading with OpenDyslexic font,
+// Core Dyslexia activity - passage reading with OpenDyslexic font,
 // word-by-word highlighting, syllable breakdown, and comprehension questions.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -18,7 +18,7 @@ import { READING_CONTENT, STRINGS } from '../data';
 import { generateComprehensionQuestions, generateReadingPassage } from '../gemini';
 import { updateStudentProgress } from '../firebase';
 
-// ── OpenDyslexic CDN — Reading Room only ────────────────────────────────────
+// ── OpenDyslexic CDN - Reading Room only ────────────────────────────────────
 const DYSLEXIC_FONT_LINK = 'https://fonts.cdnfonts.com/css/opendyslexic';
 
 const injectDyslexicFont = () => {
@@ -189,7 +189,7 @@ export default function ReadingRoom() {
     return activePassage.syllabledWords[clean] || activePassage.syllabledWords[word] || word;
   };
 
-  // Move to comprehension + fetch AI questions (plural — 3 at once)
+  // Move to comprehension + fetch AI questions (plural - 3 at once)
   const handleFinishReading = async () => {
     setPhase('questions');
     setAiLoading(true);
@@ -221,7 +221,7 @@ export default function ReadingRoom() {
 
   const allAnswered = allQuestions.length > 0 && allQuestions.every((_, i) => answers[i] !== undefined);
 
-  // Handle completion — track activity + fire confetti
+  // Handle completion - track activity + fire confetti
   const handleComplete = async () => {
     setPhase('complete');
 
@@ -508,7 +508,7 @@ export default function ReadingRoom() {
               </p>
             </div>
 
-            {/* Syllable breakdown card — appears below the passage */}
+            {/* Syllable breakdown card - appears below the passage */}
             {tappedWord && (
               <div className="bg-warm/5 border border-warm/20 rounded-2xl p-4 mb-4 flex items-center gap-4 animate-slideUp">
                 <div className="flex-1">
@@ -547,7 +547,7 @@ export default function ReadingRoom() {
             <p className="text-center text-muted text-xs mt-3 flex items-center justify-center gap-1.5">
               <HelpCircle className="w-3.5 h-3.5" />
               {lang === 'HI'
-                ? 'किसी भी शब्द पर टैप करें — उसे सुनें और समझें'
+                ? 'किसी भी शब्द पर टैप करें - उसे सुनें और समझें'
                 : 'Tap any word to hear it and see its syllables'}
             </p>
           </div>
@@ -568,7 +568,7 @@ export default function ReadingRoom() {
               </p>
             </div>
 
-            {/* AI loading state — shown while fetching questions */}
+            {/* AI loading state - shown while fetching questions */}
             {aiLoading && (
               <div className="bg-card rounded-2xl border border-gray-100 p-8 flex flex-col items-center gap-3 mb-5">
                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
@@ -604,7 +604,7 @@ export default function ReadingRoom() {
               </div>
             )}
 
-            {/* AI error notice — when no AI questions and no fallback either */}
+            {/* AI error notice - when no AI questions and no fallback either */}
             {aiError && allQuestions.length === 0 && (
               <div className="bg-warm/5 border border-warm/20 rounded-2xl p-4 flex items-center gap-3 mb-5">
                 <AlertCircle className="w-5 h-5 text-warm flex-shrink-0" />
@@ -614,7 +614,7 @@ export default function ReadingRoom() {
               </div>
             )}
 
-            {/* Finish Reading button — visible only after all answered */}
+            {/* Finish Reading button - visible only after all answered */}
             {allAnswered && (
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
@@ -659,8 +659,8 @@ export default function ReadingRoom() {
               </h2>
               <p className="text-white/80 text-base mb-2">
                 {lang === 'HI'
-                  ? `आपने ${audioCount} बार Read-Along सहायता ली — यह एक स्मार्ट लर्निंग टूल है!`
-                  : `You used the read-along helper ${audioCount} time${audioCount !== 1 ? 's' : ''} — that's a smart learning tool!`}
+                  ? `आपने ${audioCount} बार Read-Along सहायता ली - यह एक स्मार्ट लर्निंग टूल है!`
+                  : `You used the read-along helper ${audioCount} time${audioCount !== 1 ? 's' : ''} - that's a smart learning tool!`}
               </p>
               <p className="text-white/70 text-sm mb-6">
                 {lang === 'HI'

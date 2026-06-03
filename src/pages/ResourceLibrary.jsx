@@ -74,7 +74,7 @@ export default function ResourceLibrary() {
   const [toastMsg, setToastMsg]     = useState('');
   const [toastVisible, setToastVisible] = useState(false);
 
-  // Local ratings state — starts from data.js values
+  // Local ratings state - starts from data.js values
   const [ratings, setRatings] = useState(
     Object.fromEntries(RESOURCES.map(r => [r.id, r.rating]))
   );

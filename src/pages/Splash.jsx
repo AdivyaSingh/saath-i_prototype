@@ -1,6 +1,6 @@
 // src/pages/Splash.jsx
 // Route: /
-// Premium landing page — first impression for judges and users.
+// Premium landing page - first impression for judges and users.
 // Clean design with gradient background, staggered animations, and no emojis.
 
 import { useNavigate } from 'react-router-dom';
@@ -82,7 +82,7 @@ const Splash = () => {
             {/* Owl in a styled companion-container */}
             <div
               className="companion-container w-28 h-28 text-5xl animate-float"
-              aria-label="Gyaan the Owl — your learning companion"
+              aria-label="Gyaan the Owl - your learning companion"
             >
               🦉
             </div>

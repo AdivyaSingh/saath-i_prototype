@@ -38,7 +38,7 @@ const DYSGRAPHIA_WEIGHTS = { deviation: 0.4, jitter: 0.35, incompletion: 0.25 };
 const TRACE_GREEN = 15;
 const TRACE_YELLOW = 25;
 
-// Baseline response time thresholds (ms) — used to normalize slowness
+// Baseline response time thresholds (ms) - used to normalize slowness
 const RHYME_EXPECTED_MS = 5000;
 const PILE_EXPECTED_MS = 4000;
 
@@ -251,17 +251,17 @@ const drawCanvas = (ctx, pathPixels, userPoints, sampledPath, isDone) => {
   ctx.fillText('END', endPt.x, endPt.y - 18);
   ctx.restore();
 
-  // User trace — color-coded by accuracy
+  // User trace - color-coded by accuracy
   if (userPoints.length > 1 && sampledPath.length > 0) {
     for (let i = 1; i < userPoints.length; i++) {
       const dist = minDistToPath(userPoints[i], sampledPath);
       let color;
       if (dist <= TRACE_GREEN) {
-        color = '#22C55E'; // green — accurate
+        color = '#22C55E'; // green - accurate
       } else if (dist <= TRACE_YELLOW) {
-        color = '#EAB308'; // yellow — slightly off
+        color = '#EAB308'; // yellow - slightly off
       } else {
-        color = '#E87722'; // orange — off path
+        color = '#E87722'; // orange - off path
       }
 
       ctx.save();
@@ -450,7 +450,7 @@ export default function Screening() {
           }
         }, 1500);
       } else {
-        // Incorrect — track it, show encouraging feedback, reveal correct pair
+        // Incorrect - track it, show encouraging feedback, reveal correct pair
         rhymeDataRef.current.incorrectRounds++;
         setRhymeFeedback('incorrect');
         setRhymeCorrectPair([a, b]);
@@ -675,7 +675,7 @@ export default function Screening() {
   };
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // COMPLETION — Derive profile and store results
+  // COMPLETION - Derive profile and store results
   // ══════════════════════════════════════════════════════════════════════════════
   const [profileResult, setProfileResult] = useState(null);
 
@@ -833,7 +833,7 @@ export default function Screening() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════
-            ACTIVITY 1 — Word Sound Game (Dyslexia proxy)
+            ACTIVITY 1 - Word Sound Game (Dyslexia proxy)
         ═══════════════════════════════════════════════════════════════════ */}
         {activityIndex === 0 && (
           <div className="space-y-5 animate-fadeIn">
@@ -854,7 +854,7 @@ export default function Screening() {
               </p>
             </div>
 
-            {/* Word cards — 2x2 grid */}
+            {/* Word cards - 2x2 grid */}
             <div className="grid grid-cols-2 gap-3">
               {SCREENING_WORD_SETS[rhymeRound].words.map((word, idx) => {
                 const isSelected = rhymeSelected.includes(idx);
@@ -881,7 +881,7 @@ export default function Screening() {
                     key={`${rhymeRound}-${word}`}
                     onClick={() => handleRhymeTap(idx)}
                     className={`rounded-xl border-2 p-4 flex flex-col items-center gap-3 min-h-[100px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent ${borderClass}`}
-                    aria-label={`${word} — tap to select`}
+                    aria-label={`${word} - tap to select`}
                     aria-pressed={isSelected}
                     disabled={!!rhymeFeedback}
                   >
@@ -904,7 +904,7 @@ export default function Screening() {
               })}
             </div>
 
-            {/* Feedback — correct */}
+            {/* Feedback - correct */}
             {rhymeFeedback === 'correct' && (
               <div
                 className="bg-green-50 border border-green-200 rounded-xl p-3 text-center animate-fadeIn"
@@ -920,7 +920,7 @@ export default function Screening() {
               </div>
             )}
 
-            {/* Feedback — incorrect (encouraging, no "wrong") */}
+            {/* Feedback - incorrect (encouraging, no "wrong") */}
             {rhymeFeedback === 'incorrect' && (
               <div
                 className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center animate-fadeIn"
@@ -929,8 +929,8 @@ export default function Screening() {
               >
                 <p className="text-warm font-semibold text-base">
                   {lang === 'HI'
-                    ? 'ये शब्द ताल मिलाते हैं — ध्यान से सुनो!'
-                    : 'These words rhyme — listen closely!'}
+                    ? 'ये शब्द ताल मिलाते हैं - ध्यान से सुनो!'
+                    : 'These words rhyme - listen closely!'}
                 </p>
               </div>
             )}
@@ -946,7 +946,7 @@ export default function Screening() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════
-            ACTIVITY 2 — Which Group Has More? (Dyscalculia proxy)
+            ACTIVITY 2 - Which Group Has More? (Dyscalculia proxy)
         ═══════════════════════════════════════════════════════════════════ */}
         {activityIndex === 1 && (
           <div className="space-y-5 animate-fadeIn">
@@ -994,10 +994,10 @@ export default function Screening() {
                     key={`${pileRound}-${side}`}
                     onClick={() => handlePileTap(side)}
                     className={`rounded-xl border-2 p-4 flex flex-col items-center justify-center gap-3 min-h-[160px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent ${borderClass}`}
-                    aria-label={`${side} group — tap to choose`}
+                    aria-label={`${side} group - tap to choose`}
                     disabled={!!pileChosen}
                   >
-                    {/* Dot grid — styled circles, NOT emojis */}
+                    {/* Dot grid - styled circles, NOT emojis */}
                     <div
                       className="flex flex-wrap justify-center gap-1.5 max-w-[120px]"
                       aria-hidden="true"
@@ -1040,8 +1040,8 @@ export default function Screening() {
               >
                 <p className="text-warm font-semibold text-base">
                   {lang === 'HI'
-                    ? 'ध्यान से देखो — कौन सा समूह बड़ा है!'
-                    : 'Look closely — which group has more!'}
+                    ? 'ध्यान से देखो - कौन सा समूह बड़ा है!'
+                    : 'Look closely - which group has more!'}
                 </p>
               </div>
             )}
@@ -1049,7 +1049,7 @@ export default function Screening() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════
-            ACTIVITY 3 — Trace the Path (Dysgraphia proxy)
+            ACTIVITY 3 - Trace the Path (Dysgraphia proxy)
         ═══════════════════════════════════════════════════════════════════ */}
         {activityIndex === 2 && (
           <div className="space-y-4 animate-fadeIn">
@@ -1162,7 +1162,7 @@ export default function Screening() {
               </p>
             </div>
 
-            {/* Profile reveal card — child-friendly, no clinical labels */}
+            {/* Profile reveal card - child-friendly, no clinical labels */}
             {profileResult && (
               <div className="bg-card border border-gray-100 rounded-xl p-5 w-full max-w-sm shadow-sm space-y-3">
                 <div className="flex items-center gap-3">
@@ -1175,7 +1175,7 @@ export default function Screening() {
                   </p>
                 </div>
 
-                {/* Visual strength indicator — subtle bars, no numbers */}
+                {/* Visual strength indicator - subtle bars, no numbers */}
                 <div className="space-y-2 pt-2">
                   <ProfileBar
                     label={lang === 'HI' ? 'सुनना और ध्वनि' : 'Listening & Sounds'}
@@ -1237,7 +1237,7 @@ export default function Screening() {
 }
 
 // ─── Profile bar sub-component ────────────────────────────────────────────────
-// Shows a subtle bar for each learning dimension — no numbers, just relative fill
+// Shows a subtle bar for each learning dimension - no numbers, just relative fill
 const ProfileBar = ({ label, value, isDetected }) => (
   <div className="flex items-center gap-3">
     <span className={`text-xs w-28 text-right flex-shrink-0 ${isDetected ? 'font-semibold text-primary' : 'text-muted'}`}>
