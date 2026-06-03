@@ -225,8 +225,16 @@ export default function TeacherDashboard() {
         return (order[a.status] ?? 3) - (order[b.status] ?? 3);
       }
       if (sortBy === 'lastActive') {
+        const formatLastActive = (val) => {
+          if (!val) return null;
+          if (typeof val === 'string') return val;
+          if (val.toMillis) return `${Math.floor((Date.now() - val.toMillis()) / 3600000)} hours ago`;
+          if (val.seconds) return `${Math.floor((Date.now() - (val.seconds * 1000)) / 3600000)} hours ago`;
+          return String(val);
+        };
         // Parse "2 hours ago", "1 day ago", "8 days ago" for rough sort
-        const parseTime = (str) => {
+        const parseTime = (val) => {
+          const str = formatLastActive(val);
           if (!str) return 9999;
           const n = parseInt(str) || 0;
           if (str.includes('hour')) return n;
@@ -523,7 +531,25 @@ export default function TeacherDashboard() {
 
               {/* Last active */}
               <p className="text-xs text-muted mb-1">
-                {language === 'HI' ? 'अंतिम सक्रिय:' : 'Last active:'} {student.lastActive || '-'}
+                {language === 'HI' ? 'अंतिम सक्रिय:' : 'Last active:'} {
+                  (function(val) {
+                    if (!val) return '-';
+                    if (typeof val === 'string') return val;
+                    if (val.toMillis) {
+                      const diffHours = (Date.now() - val.toMillis()) / 3600000;
+                      if (diffHours < 1) return language === 'HI' ? 'अभी-अभी' : 'just now';
+                      if (diffHours < 24) return `${Math.floor(diffHours)} ${language === 'HI' ? 'घंटे पहले' : 'hours ago'}`;
+                      return `${Math.floor(diffHours / 24)} ${language === 'HI' ? 'दिन पहले' : 'days ago'}`;
+                    }
+                    if (val.seconds) {
+                      const diffHours = (Date.now() - (val.seconds * 1000)) / 3600000;
+                      if (diffHours < 1) return language === 'HI' ? 'अभी-अभी' : 'just now';
+                      if (diffHours < 24) return `${Math.floor(diffHours)} ${language === 'HI' ? 'घंटे पहले' : 'hours ago'}`;
+                      return `${Math.floor(diffHours / 24)} ${language === 'HI' ? 'दिन पहले' : 'days ago'}`;
+                    }
+                    return String(val);
+                  })(student.lastActive)
+                }
               </p>
 
               {/* Streak */}
@@ -721,20 +747,20 @@ export default function TeacherDashboard() {
                       <div className="divide-y divide-gray-100">
                         <TelemetryStat
                           label={language === 'HI' ? 'तुकबंदी गति' : 'Rhyming Speed'}
-                          value={`${activeStudent.telemetry.rhymingSpeed}s avg`}
-                          barPercent={Math.max(0, 100 - (activeStudent.telemetry.rhymingSpeed / 5) * 100)}
+                          value={`${activeStudent.telemetry.rhymingSpeed ?? 0}s avg`}
+                          barPercent={Math.max(0, 100 - ((activeStudent.telemetry.rhymingSpeed ?? 0) / 5) * 100)}
                           barColor="bg-accent"
                         />
                         <TelemetryStat
                           label={language === 'HI' ? 'ऑडियो सहायता उपयोग' : 'Audio Help Used'}
-                          value={`${activeStudent.telemetry.audioHelpUsed} ${language === 'HI' ? 'बार' : 'times'}`}
-                          barPercent={Math.min(100, (activeStudent.telemetry.audioHelpUsed / 10) * 100)}
+                          value={`${activeStudent.telemetry.audioHelpUsed ?? 0} ${language === 'HI' ? 'बार' : 'times'}`}
+                          barPercent={Math.min(100, ((activeStudent.telemetry.audioHelpUsed ?? 0) / 10) * 100)}
                           barColor="bg-blue-400"
                         />
                         <TelemetryStat
                           label={language === 'HI' ? 'तुकबंदी सटीकता' : 'Rhyming Accuracy'}
-                          value={`${activeStudent.telemetry.rhymingAccuracy}%`}
-                          barPercent={activeStudent.telemetry.rhymingAccuracy}
+                          value={`${activeStudent.telemetry.rhymingAccuracy ?? 0}%`}
+                          barPercent={activeStudent.telemetry.rhymingAccuracy ?? 0}
                           barColor="bg-green-500"
                         />
                       </div>
@@ -753,8 +779,8 @@ export default function TeacherDashboard() {
                       <div className="divide-y divide-gray-100">
                         <TelemetryStat
                           label={language === 'HI' ? 'गिनती गति' : 'Counting Speed'}
-                          value={`${activeStudent.telemetry.countingSpeed}s avg`}
-                          barPercent={Math.max(0, 100 - (activeStudent.telemetry.countingSpeed / 5) * 100)}
+                          value={`${activeStudent.telemetry.countingSpeed ?? 0}s avg`}
+                          barPercent={Math.max(0, 100 - ((activeStudent.telemetry.countingSpeed ?? 0) / 5) * 100)}
                           barColor="bg-indigo-500"
                         />
                         <TelemetryStat
@@ -807,8 +833,8 @@ export default function TeacherDashboard() {
                         </div>
                         <TelemetryStat
                           label={language === 'HI' ? 'पथ सटीकता' : 'Path Accuracy'}
-                          value={`${activeStudent.telemetry.pathAccuracy}px off-center`}
-                          barPercent={Math.min(100, (activeStudent.telemetry.pathAccuracy / 30) * 100)}
+                          value={`${activeStudent.telemetry.pathAccuracy ?? 0}px off-center`}
+                          barPercent={Math.min(100, ((activeStudent.telemetry.pathAccuracy ?? 0) / 30) * 100)}
                           barColor="bg-calm"
                         />
                       </div>
