@@ -10,7 +10,7 @@ import {
   Minus, Plus, Heart, Check, ChevronRight, Sparkles, RefreshCw, Home,
   Award, HelpCircle
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { useApp } from '../App';
 import Layout from '../components/Layout';
@@ -482,57 +482,69 @@ export default function ReadingRoom() {
               </div>
             </div>
 
-            {/* Passage text with word-by-word highlighting */}
-            <div className="bg-card rounded-2xl shadow-sm p-5 border border-gray-100 mb-4 leading-loose">
-              <p style={{ fontSize: `${fontSize}px`, lineHeight: '2', letterSpacing: '0.04em' }}>
-                {words.map((word, idx) => (
-                  <span key={idx}>
-                    <span
-                      onClick={() => handleWordTap(word, idx)}
-                      className={`cursor-pointer rounded px-0.5 transition-colors duration-150 ${
-                        idx === currentWordIdx
-                          ? 'bg-yellow-200/70 rounded'
-                          : tappedWordIdx === idx
-                          ? 'bg-warm/15 rounded'
-                          : 'hover:bg-accent/5'
-                      }`}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Word: ${word}`}
-                      onKeyDown={(e) => e.key === 'Enter' && handleWordTap(word, idx)}
-                    >
-                      {word}
+            <div className="flex flex-col md:flex-row gap-4 mb-6 items-start md:justify-center overflow-visible">
+              {/* Passage text with word-by-word highlighting */}
+              <motion.div layout className="bg-card rounded-2xl shadow-sm p-6 border border-gray-100 leading-loose w-full md:w-[1000px] shrink-0 max-w-full">
+                <p style={{ fontSize: `${fontSize}px`, lineHeight: '2', letterSpacing: '0.04em' }}>
+                  {words.map((word, idx) => (
+                    <span key={idx}>
+                      <span
+                        onClick={() => handleWordTap(word, idx)}
+                        className={`cursor-pointer rounded px-0.5 transition-colors duration-150 ${
+                          idx === currentWordIdx
+                            ? 'bg-yellow-200/70 rounded'
+                            : tappedWordIdx === idx
+                            ? 'bg-warm/15 rounded'
+                            : 'hover:bg-accent/5'
+                        }`}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Word: ${word}`}
+                        onKeyDown={(e) => e.key === 'Enter' && handleWordTap(word, idx)}
+                      >
+                        {word}
+                      </span>
+                      {' '}
                     </span>
-                    {' '}
-                  </span>
-                ))}
-              </p>
-            </div>
+                  ))}
+                </p>
+              </motion.div>
 
-            {/* Syllable breakdown card - appears below the passage */}
-            {tappedWord && (
-              <div className="bg-warm/5 border border-warm/20 rounded-2xl p-4 mb-4 flex items-center gap-4 animate-slideUp">
-                <div className="flex-1">
-                  <p className="text-muted text-xs mb-1">
-                    {lang === 'HI' ? 'अक्षर-विभाजन' : 'Syllable breakdown'}
-                  </p>
-                  <p
-                    className="text-primary font-bold text-2xl tracking-widest"
-                    style={{ fontFamily: "'OpenDyslexic', sans-serif" }}
+              {/* Syllable breakdown card - appears below on mobile, right on desktop */}
+              <AnimatePresence>
+                {tappedWord && (
+                  <motion.div
+                    layout
+                    initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
+                    className="w-full md:w-64 bg-warm/5 border border-warm/20 rounded-2xl p-5 flex md:flex-col items-center gap-4 shrink-0 md:sticky md:top-24 md:ml-4"
                   >
-                    {syllableFor(tappedWord)}
-                  </p>
-                </div>
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => speakWord(tappedWord)}
-                  className="w-12 h-12 rounded-xl bg-warm/15 text-warm flex items-center justify-center hover:bg-warm/25 transition-colors min-h-[48px]"
-                  aria-label={`Hear word: ${tappedWord}`}
-                >
-                  <Volume2 className="w-5 h-5" />
-                </motion.button>
-              </div>
-            )}
+                    <div className="flex-1 md:w-full">
+                      <p className="text-muted text-xs mb-2 md:text-center">
+                        {lang === 'HI' ? 'अक्षर-विभाजन' : 'Syllable breakdown'}
+                      </p>
+                      <p
+                        className="text-primary font-bold text-2xl tracking-widest md:text-center"
+                        style={{ fontFamily: "'OpenDyslexic', sans-serif" }}
+                      >
+                        {syllableFor(tappedWord)}
+                      </p>
+                    </div>
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => speakWord(tappedWord)}
+                      className="w-12 h-12 md:w-full rounded-xl bg-warm/15 text-warm flex items-center justify-center hover:bg-warm/25 transition-colors min-h-[48px] gap-2 font-semibold text-sm"
+                      aria-label={`Hear word: ${tappedWord}`}
+                    >
+                      <Volume2 className="w-5 h-5" />
+                      <span className="hidden md:inline">{lang === 'HI' ? 'सुनें' : 'Listen'}</span>
+                    </motion.button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             {/* Finish reading CTA */}
             <motion.button
