@@ -1,5 +1,5 @@
 // src/components/Layout.jsx
-// Shared shell component — wraps every page.
+// Shared shell component - wraps every page.
 // Includes: 3-state connectivity banner, top nav bar, language toggle, companion widget with chat.
 
 import { useState, useRef, useEffect } from 'react';
@@ -9,19 +9,19 @@ import { getCompanionHint } from '../gemini';
 
 /**
  * Layout props:
- *   children       — page content
- *   title          — page title shown in nav bar
- *   showBack       — show back arrow in nav (default: false)
- *   showNav        — show top nav bar (default: true; pass false for Splash)
- *   showCompanion  — show companion floating widget (student pages only)
- *   companionState — 'idle' | 'happy' | 'encouraging'
- *   isTeacherPage  — true for teacher pages (hides companion, adjusts max-width)
- *   lang           — 'EN' | 'HI' (from appState.language)
- *   setLanguage    — function to toggle language (wraps updateState)
- *   companion      — { emoji, nickname } from appState.companion
- *   streak         — streakDays from appState (shown on student pages)
- *   studentName    — student's name for companion chat
- *   pageContext    — brief description of what the student is currently doing
+ *   children       - page content
+ *   title          - page title shown in nav bar
+ *   showBack       - show back arrow in nav (default: false)
+ *   showNav        - show top nav bar (default: true; pass false for Splash)
+ *   showCompanion  - show companion floating widget (student pages only)
+ *   companionState - 'idle' | 'happy' | 'encouraging'
+ *   isTeacherPage  - true for teacher pages (hides companion, adjusts max-width)
+ *   lang           - 'EN' | 'HI' (from appState.language)
+ *   setLanguage    - function to toggle language (wraps updateState)
+ *   companion      - { emoji, nickname } from appState.companion
+ *   streak         - streakDays from appState (shown on student pages)
+ *   studentName    - student's name for companion chat
+ *   pageContext    - brief description of what the student is currently doing
  */
 export default function Layout({
   children,
@@ -42,7 +42,7 @@ export default function Layout({
 
   // ─── CONNECTIVITY STATE ───────────────────────────────────────────────────────
   // Three states: 'online' | 'syncing' | 'offline'
-  // Timings (ms) — tweak these to adjust demo feel:
+  // Timings (ms) - tweak these to adjust demo feel:
   const SYNC_DURATION_MS = 3500;   // how long the yellow "syncing" state lasts (3-4 seconds for Firebase catch-up feel)
 
   const [connState, setConnState] = useState(
@@ -119,22 +119,22 @@ export default function Layout({
     offline: {
       bg: 'bg-red-600',
       icon: WifiOff,
-      textEN: 'Offline mode — data saved locally',
-      textHI: 'ऑफलाइन मोड — बदलाव स्थानीय रूप से सेव हुए',
+      textEN: 'Offline mode - data saved locally',
+      textHI: 'ऑफलाइन मोड - बदलाव स्थानीय रूप से सेव हुए',
       spinning: false,
     },
     syncing: {
       bg: 'bg-amber-500',
       icon: Loader2,
-      textEN: 'Reconnected — syncing to database...',
-      textHI: 'कनेक्ट हुआ — डेटाबेस से सिंक हो रहा है...',
+      textEN: 'Reconnected - syncing to database...',
+      textHI: 'कनेक्ट हुआ - डेटाबेस से सिंक हो रहा है...',
       spinning: true,
     },
     online: {
       bg: 'bg-primary',
       icon: Wifi,
-      textEN: 'Online — Database connected',
-      textHI: 'ऑनलाइन — डेटाबेस कनेक्टेड',
+      textEN: 'Online - Database connected',
+      textHI: 'ऑनलाइन - डेटाबेस कनेक्टेड',
       spinning: false,
     },
   };
@@ -225,7 +225,7 @@ export default function Layout({
       <button
         onClick={handleCompanionTap}
         className="flex flex-col items-center gap-1.5 animate-fadeIn group"
-        aria-label={`${companion?.nickname || 'Gyaan'} — tap for help`}
+        aria-label={`${companion?.nickname || 'Gyaan'} - tap for help`}
       >
         <div
           className={`companion-container transition-all duration-300 group-hover:scale-105 ${
