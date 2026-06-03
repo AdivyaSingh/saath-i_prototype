@@ -131,7 +131,7 @@ export default function Layout({
       spinning: true,
     },
     online: {
-      bg: 'bg-blue-600',
+      bg: 'bg-primary',
       icon: Wifi,
       textEN: 'Online — Database connected',
       textHI: 'ऑनलाइन — डेटाबेस कनेक्टेड',

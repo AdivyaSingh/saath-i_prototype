@@ -3,7 +3,7 @@
 // Purpose: End-to-end IEP creation - the single most impactful teacher feature.
 // 4-step flow: Data Summary → Generating (Gemini) → Preview & Approve → Success
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FileText, Check, Edit3, Download, ArrowLeft,
@@ -13,6 +13,7 @@ import Layout from '../components/Layout';
 import { useApp } from '../App';
 import { DEMO_STUDENTS, STRINGS } from '../data';
 import { generateIEP } from '../gemini';
+import { subscribeToStudents } from '../firebase';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -79,7 +80,23 @@ export default function IEPGenerator() {
   const { language, teacherName } = appState;
   const S = STRINGS[language];
 
-  const student = DEMO_STUDENTS.find(s => s.id === id);
+  // ── Firebase subscription ──
+  const [firebaseStudents, setFirebaseStudents] = useState([]);
+  
+  useEffect(() => {
+    const unsubscribe = subscribeToStudents((students) => {
+      setFirebaseStudents(students);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const demoIds = new Set(DEMO_STUDENTS.map(s => s.id));
+  const allStudents = [
+    ...DEMO_STUDENTS,
+    ...firebaseStudents.filter(s => !demoIds.has(s.id))
+  ];
+
+  const student = allStudents.find(s => s.id === id);
 
   // Step state: 1 = Data Summary, 2 = Generating, 3 = Preview & Approve, 4 = Success
   const [currentStep, setCurrentStep] = useState(1);
