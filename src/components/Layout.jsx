@@ -1,9 +1,11 @@
 // src/components/Layout.jsx
 // Shared shell component — wraps every page.
-// Includes: offline banner, top nav bar, language toggle, companion widget.
+// Includes: offline banner, top nav bar, language toggle, companion widget with chat.
 
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Wifi, WifiOff, Flame, Globe } from 'lucide-react';
+import { ArrowLeft, WifiOff, Flame, Globe, X, Send, Loader2 } from 'lucide-react';
+import { getCompanionHint } from '../gemini';
 
 /**
  * Layout props:
@@ -18,6 +20,8 @@ import { ArrowLeft, Wifi, WifiOff, Flame, Globe } from 'lucide-react';
  *   setLanguage    — function to toggle language (wraps updateState)
  *   companion      — { emoji, nickname } from appState.companion
  *   streak         — streakDays from appState (shown on student pages)
+ *   studentName    — student's name for companion chat
+ *   pageContext    — brief description of what the student is currently doing
  */
 export default function Layout({
   children,
@@ -31,8 +35,56 @@ export default function Layout({
   setLanguage,
   companion,
   streak,
+  studentName = '',
+  pageContext = '',
 }) {
   const navigate = useNavigate();
+
+  // ─── COMPANION CHAT STATE ─────────────────────────────────────────────────
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages]);
+
+  const handleCompanionTap = async () => {
+    if (chatOpen) {
+      setChatOpen(false);
+      return;
+    }
+    setChatOpen(true);
+
+    // If no messages yet, fetch an initial hint
+    if (chatMessages.length === 0) {
+      setChatLoading(true);
+      const hint = await getCompanionHint(
+        pageContext || title || 'exploring the app',
+        companion?.nickname || 'Gyaan',
+        studentName || 'friend',
+        lang
+      );
+      setChatMessages([{ from: 'companion', text: hint }]);
+      setChatLoading(false);
+    }
+  };
+
+  const handleAskHint = async () => {
+    setChatLoading(true);
+    const hint = await getCompanionHint(
+      pageContext || title || 'exploring the app',
+      companion?.nickname || 'Gyaan',
+      studentName || 'friend',
+      lang
+    );
+    setChatMessages(prev => [...prev, { from: 'companion', text: hint }]);
+    setChatLoading(false);
+  };
 
   // ─── OFFLINE BANNER ──────────────────────────────────────────────────────────
   const OfflineBanner = () => (
@@ -51,7 +103,7 @@ export default function Layout({
     <button
       onClick={() => setLanguage && setLanguage(lang === 'EN' ? 'HI' : 'EN')}
       aria-label="Toggle language"
-      className="flex items-center gap-1.5 bg-white border border-gray-200 text-primary font-semibold text-sm px-3 py-2 rounded-lg min-h-[40px] hover:bg-gray-50 hover:border-gray-300 transition-all duration-200"
+      className="flex items-center gap-1.5 bg-white border border-gray-200 text-primary font-semibold text-sm px-3 py-2 rounded-lg min-h-[40px] hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 active:scale-[0.97]"
     >
       <Globe size={14} className="text-muted" />
       <span>{lang === 'EN' ? 'हिंदी' : 'EN'}</span>
@@ -67,7 +119,7 @@ export default function Layout({
           <button
             onClick={() => navigate(-1)}
             aria-label="Go back"
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center active:scale-[0.95]"
           >
             <ArrowLeft size={20} className="text-primary" />
           </button>
@@ -92,23 +144,80 @@ export default function Layout({
     </div>
   );
 
-  // ─── COMPANION WIDGET ─────────────────────────────────────────────────────────
+  // ─── COMPANION WIDGET WITH CHAT ───────────────────────────────────────────────
   const CompanionWidget = () => (
-    <div
-      className="fixed bottom-20 right-4 flex flex-col items-center gap-1.5 z-40 animate-fadeIn"
-      aria-label={`${companion?.nickname || 'Gyaan'} your learning companion`}
-    >
-      <div
-        className={`companion-container ${
-          companionState === 'happy' ? 'happy' : 
-          companionState === 'encouraging' ? 'encouraging' : ''
-        }`}
+    <div className="fixed bottom-20 right-4 z-40 flex flex-col items-end gap-2">
+      {/* Chat bubble */}
+      {chatOpen && (
+        <div className="bg-card rounded-2xl shadow-xl border border-gray-100 w-72 max-h-64 flex flex-col animate-scaleIn origin-bottom-right">
+          {/* Chat header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">{companion?.emoji || '🦉'}</span>
+              <span className="text-sm font-semibold text-primary">
+                {companion?.nickname || 'Gyaan'}
+              </span>
+            </div>
+            <button
+              onClick={() => setChatOpen(false)}
+              className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
+              aria-label="Close chat"
+            >
+              <X size={14} className="text-muted" />
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-[80px] max-h-[140px]">
+            {chatMessages.map((msg, i) => (
+              <div
+                key={i}
+                className="bg-warm/5 border border-warm/10 rounded-xl px-3 py-2 text-sm text-primary leading-relaxed animate-fadeIn"
+              >
+                {msg.text}
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="flex items-center gap-2 text-muted text-xs py-1">
+                <Loader2 size={12} className="animate-spin" />
+                <span>{lang === 'HI' ? 'सोच रहा हूँ...' : 'Thinking...'}</span>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Ask for another hint */}
+          <div className="px-3 py-2 border-t border-gray-100">
+            <button
+              onClick={handleAskHint}
+              disabled={chatLoading}
+              className="w-full bg-warm/10 text-warm text-sm font-medium py-2 rounded-xl hover:bg-warm/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 min-h-[40px]"
+            >
+              <Send size={12} />
+              {lang === 'HI' ? 'और मदद चाहिए' : 'Help me more'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Companion avatar */}
+      <button
+        onClick={handleCompanionTap}
+        className="flex flex-col items-center gap-1.5 animate-fadeIn group"
+        aria-label={`${companion?.nickname || 'Gyaan'} — tap for help`}
       >
-        {companion?.emoji || '🦉'}
-      </div>
-      <span className="text-[10px] font-medium text-muted bg-card px-2 py-0.5 rounded-full shadow-sm border border-gray-100">
-        {companion?.nickname || 'Gyaan'}
-      </span>
+        <div
+          className={`companion-container transition-all duration-300 group-hover:scale-105 ${
+            companionState === 'happy' ? 'happy' :
+            companionState === 'encouraging' ? 'encouraging' : ''
+          } ${chatOpen ? 'ring-2 ring-warm/30 ring-offset-2' : ''}`}
+        >
+          {companion?.emoji || '🦉'}
+        </div>
+        <span className="text-[10px] font-medium text-muted bg-card px-2 py-0.5 rounded-full shadow-sm border border-gray-100">
+          {companion?.nickname || 'Gyaan'}
+        </span>
+      </button>
     </div>
   );
 

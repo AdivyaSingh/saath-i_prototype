@@ -192,3 +192,52 @@
 .stagger-4 { animation-delay: 0.2s; }
 .stagger-5 { animation-delay: 0.25s; }
 .stagger-6 { animation-delay: 0.3s; }
+
+/* ─── MICRO-INTERACTIONS ───────────────────────────────────────────────────── */
+/* Subtle button press feedback */
+button:active:not(:disabled) {
+  transition: transform 0.1s ease;
+}
+
+/* Card hover lift — applies to all card-elevated */
+.card-elevated {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* Telemetry bar animation */
+@keyframes barGrow {
+  from { width: 0; }
+}
+.telemetry-bar {
+  animation: barGrow 0.8s ease-out forwards;
+}
+
+/* Chat bubble entrance */
+@keyframes chatBounceIn {
+  0% { opacity: 0; transform: scale(0.85) translateY(8px); }
+  60% { transform: scale(1.02) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-chatBounce {
+  animation: chatBounceIn 0.3s ease-out forwards;
+}
+
+/* Companion pulse when chat is open */
+@keyframes companionPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 119, 34, 0.25); }
+  50% { box-shadow: 0 0 0 6px rgba(232, 119, 34, 0); }
+}
+.companion-pulse {
+  animation: companionPulse 2s ease-in-out infinite;
+}
+
+/* Smooth page transition wrapper */
+.page-transition {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Confetti canvas — ensure it's above other content */
+canvas.confetti-canvas {
+  z-index: 9999;
+}
+

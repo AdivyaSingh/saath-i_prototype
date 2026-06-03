@@ -33,11 +33,41 @@ export async function callGemini(prompt, timeoutMs = 15000) {
 }
 
 /**
- * Generates a comprehension question for the Reading Room.
- * Returns a parsed question object or null.
+ * Generates 3-4 comprehension questions for the Reading Room.
+ * Returns an array of parsed question objects, or null.
  */
+export async function generateComprehensionQuestions(passageText, language = 'EN', classLevel = 4) {
+  const prompt = `Generate exactly 3 simple multiple-choice comprehension questions for a Class ${classLevel} Indian school student about this passage:
+"${passageText}"
+
+Language for questions: ${language === 'HI' ? 'Hindi' : 'English'}.
+Return ONLY valid JSON with no extra text or markdown backticks.
+Return an array of 3 question objects:
+[
+  { "question": "...", "options": ["...", "...", "...", "..."], "correct": 0 },
+  { "question": "...", "options": ["...", "...", "...", "..."], "correct": 1 },
+  { "question": "...", "options": ["...", "...", "...", "..."], "correct": 2 }
+]
+Rules:
+- Each question must test different aspects (factual recall, inference, moral/theme)
+- Each option must be 3-8 words maximum
+- "correct" is the 0-based index of the right answer
+- Keep questions simple and age-appropriate`;
+
+  const raw = await callGemini(prompt, 20000);
+  if (!raw) return null;
+  try {
+    const clean = raw.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// Keep the old single-question function for backward compatibility
 export async function generateComprehensionQuestion(passageText, language = 'EN', classLevel = 4) {
-  const prompt = `Generate 1 simple multiple-choice comprehension question for a Class ${classLevel} student with dyslexia about this passage:
+  const prompt = `Generate 1 simple multiple-choice comprehension question for a Class ${classLevel} student about this passage:
 "${passageText}"
 
 Language for question: ${language === 'HI' ? 'Hindi' : 'English'}.
@@ -239,4 +269,47 @@ Generate a brief, actionable teaching suggestion (2-3 sentences) that:
 Return only the suggestion text, no headers or formatting.`;
 
   return await callGemini(prompt);
+}
+
+/**
+ * Companion chatbot — generates a contextual, encouraging hint.
+ * Called when student taps the companion widget.
+ * @param {string} pageContext - what page the student is on and what they're doing
+ * @param {string} companionName - the companion's nickname
+ * @param {string} studentName - the student's name
+ * @param {string} language - 'EN' or 'HI'
+ */
+export async function getCompanionHint(pageContext, companionName = 'Gyaan', studentName = 'friend', language = 'EN') {
+  const lang = language === 'HI' ? 'Hindi' : 'English';
+  const prompt = `You are ${companionName}, a friendly, encouraging learning companion for a child named ${studentName} who is learning to read and do maths. 
+
+The child is currently: ${pageContext}
+
+Generate a short, warm, encouraging message (1-2 sentences max) in ${lang} that:
+- Is age-appropriate (8-12 years old)
+- Is gentle and encouraging, never condescending
+- Gives a small, helpful hint or nudge relevant to what they're doing
+- Feels like a friend talking, not a teacher lecturing
+- Does NOT use emojis or special characters
+
+Return only the message text, nothing else.`;
+
+  const result = await callGemini(prompt, 8000);
+  if (result) return result;
+  
+  // Fallback messages if API fails
+  const fallbacks = {
+    EN: [
+      "You're doing great! Take your time.",
+      "I believe in you! Try your best.",
+      "Every step counts. Keep going!",
+    ],
+    HI: [
+      "बहुत अच्छा कर रहे हो! अपना समय लो।",
+      "मुझे तुम पर भरोसा है! कोशिश करो।",
+      "हर कदम मायने रखता है। आगे बढ़ो!",
+    ],
+  };
+  const msgs = fallbacks[language] || fallbacks.EN;
+  return msgs[Math.floor(Math.random() * msgs.length)];
 }

@@ -44,6 +44,9 @@ const defaultState = {
   // Screening results (stored for teacher dashboard reference)
   screeningResults: null,
 
+  // Firebase student document ID (set after screening saves to Firestore)
+  firebaseStudentId: null,
+
   // Activity progress tracking
   activitiesCompleted: {
     reading: 0,

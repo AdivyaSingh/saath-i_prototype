@@ -23,6 +23,8 @@ import {
   SCREENING_TRACE_PATHS,
 } from '../data';
 import Layout from '../components/Layout';
+import { saveStudentToFirebase, saveScreeningResults } from '../firebase';
+import confetti from 'canvas-confetti';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const TOTAL_ACTIVITIES = 3;
@@ -692,7 +694,36 @@ export default function Screening() {
       );
       setProfileResult(result);
 
-      // Store in app state
+      // Compute detailed telemetry for teacher dashboard
+      const rhymeD = rhymeDataRef.current;
+      const pileD = pileDataRef.current;
+      const avgRhymeTime = rhymeD.responseTimes.length > 0
+        ? rhymeD.responseTimes.reduce((a, b) => a + b, 0) / rhymeD.responseTimes.length
+        : 0;
+      const avgPileTime = pileD.responseTimes.length > 0
+        ? pileD.responseTimes.reduce((a, b) => a + b, 0) / pileD.responseTimes.length
+        : 0;
+      const rhymeErrorRate = rhymeD.totalRounds > 0
+        ? rhymeD.incorrectRounds / rhymeD.totalRounds
+        : 0;
+      const closeNumberErrorRate = pileD.hardRounds > 0
+        ? pileD.hardRoundErrors / pileD.hardRounds
+        : 0;
+
+      const telemetryData = {
+        // Reading & Sound Tracking
+        rhymingSpeed: Math.round(avgRhymeTime / 1000 * 10) / 10,
+        audioHelpUsed: rhymeD.audioUseCount,
+        rhymingAccuracy: Math.round((1 - rhymeErrorRate) * 100),
+        // Number Sense
+        countingSpeed: Math.round(avgPileTime / 1000 * 10) / 10,
+        closeNumberConfusion: closeNumberErrorRate > 0.5,
+        // Motor Control
+        lineSteadiness: traceData.jitterScore > 0.5 ? 'Very Shaky' : traceData.jitterScore > 0.25 ? 'Shaky' : 'Steady',
+        pathAccuracy: Math.round(traceData.avgDeviation),
+      };
+
+      // Store in app state with telemetry
       updateState({
         sldType: result.detectedType,
         screeningResults: {
@@ -700,8 +731,60 @@ export default function Screening() {
           dyscalculiaScore: Math.round(result.dyscalculiaScore * 100) / 100,
           dysgraphiaScore: Math.round(result.dysgraphiaScore * 100) / 100,
           detectedType: result.detectedType,
+          telemetry: telemetryData,
         },
       });
+
+      // Save to Firebase
+      const saveToFirebase = async () => {
+        try {
+          const studentId = `student_${Date.now()}`;
+          const maxScore = Math.max(result.dyslexiaScore, result.dyscalculiaScore, result.dysgraphiaScore);
+          await saveStudentToFirebase({
+            id: studentId,
+            name: appState.studentName || 'Student',
+            class: appState.studentClass || 4,
+            school: 'Saath-i App User',
+            sldType: result.detectedType,
+            severity: maxScore > 0.6 ? 'moderate' : 'mild',
+            language: appState.language,
+            lastActive: 'Just now',
+            streakDays: appState.streakDays || 1,
+            status: 'green',
+            companion: appState.companion,
+            masteryMap: {
+              'Sound Matching': result.dyslexiaScore < 0.3 ? 'mastered' : result.dyslexiaScore < 0.6 ? 'in_progress' : 'struggling',
+              'Number Sense': result.dyscalculiaScore < 0.3 ? 'mastered' : result.dyscalculiaScore < 0.6 ? 'in_progress' : 'struggling',
+              'Motor Control': result.dysgraphiaScore < 0.3 ? 'mastered' : result.dysgraphiaScore < 0.6 ? 'in_progress' : 'struggling',
+            },
+            errorPatterns: [],
+            weeklyStats: { timeSpent: '0m', activitiesCompleted: 0, helpRequests: 0 },
+            aiSuggestion: '',
+            progressHistory: [0],
+            screeningResults: {
+              dyslexiaScore: Math.round(result.dyslexiaScore * 100) / 100,
+              dyscalculiaScore: Math.round(result.dyscalculiaScore * 100) / 100,
+              dysgraphiaScore: Math.round(result.dysgraphiaScore * 100) / 100,
+              detectedType: result.detectedType,
+            },
+            telemetry: telemetryData,
+          });
+          updateState({ firebaseStudentId: studentId });
+        } catch (err) {
+          console.error('Firebase save failed:', err);
+        }
+      };
+      saveToFirebase();
+
+      // Fire confetti
+      setTimeout(() => {
+        confetti({
+          particleCount: 80,
+          spread: 60,
+          origin: { y: 0.7 },
+          colors: ['#2E75B6', '#E87722', '#2E8B57'],
+        });
+      }, 400);
     }
   }, [activityIndex]);
 
