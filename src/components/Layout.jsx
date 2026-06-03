@@ -1,10 +1,10 @@
 // src/components/Layout.jsx
 // Shared shell component — wraps every page.
-// Includes: offline banner, top nav bar, language toggle, companion widget with chat.
+// Includes: 3-state connectivity banner, top nav bar, language toggle, companion widget with chat.
 
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, WifiOff, Flame, Globe, X, Send, Loader2 } from 'lucide-react';
+import { ArrowLeft, WifiOff, Wifi, Flame, Globe, X, Send, Loader2 } from 'lucide-react';
 import { getCompanionHint } from '../gemini';
 
 /**
@@ -40,13 +40,56 @@ export default function Layout({
 }) {
   const navigate = useNavigate();
 
+  // ─── CONNECTIVITY STATE ───────────────────────────────────────────────────────
+  // Three states: 'online' | 'syncing' | 'offline'
+  // Timings (ms) — tweak these to adjust demo feel:
+  const SYNC_DURATION_MS = 3500;   // how long the yellow "syncing" state lasts (3-4 seconds for Firebase catch-up feel)
+  const ONLINE_HIDE_MS   = 3000;   // how long the green "connected" banner stays visible
+
+  const [connState, setConnState] = useState(
+    typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'offline'
+  );
+  // Banner is hidden when online at initial load; shows for offline or sync transitions
+  const [bannerVisible, setBannerVisible] = useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+  const hideTimerRef = useRef(null);
+  const syncTimerRef = useRef(null);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      clearTimeout(hideTimerRef.current);
+      clearTimeout(syncTimerRef.current);
+      setConnState('offline');
+      setBannerVisible(true);
+    };
+
+    const handleOnline = () => {
+      clearTimeout(hideTimerRef.current);
+      setConnState('syncing');
+      setBannerVisible(true);
+      syncTimerRef.current = setTimeout(() => {
+        setConnState('online');
+        hideTimerRef.current = setTimeout(() => setBannerVisible(false), ONLINE_HIDE_MS);
+      }, SYNC_DURATION_MS);
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+      clearTimeout(hideTimerRef.current);
+      clearTimeout(syncTimerRef.current);
+    };
+  }, []);
+
   // ─── COMPANION CHAT STATE ─────────────────────────────────────────────────
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef(null);
 
-  // Auto-scroll chat to bottom
   useEffect(() => {
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -54,13 +97,8 @@ export default function Layout({
   }, [chatMessages]);
 
   const handleCompanionTap = async () => {
-    if (chatOpen) {
-      setChatOpen(false);
-      return;
-    }
+    if (chatOpen) { setChatOpen(false); return; }
     setChatOpen(true);
-
-    // If no messages yet, fetch an initial hint
     if (chatMessages.length === 0) {
       setChatLoading(true);
       const hint = await getCompanionHint(
@@ -86,17 +124,32 @@ export default function Layout({
     setChatLoading(false);
   };
 
-  // ─── OFFLINE BANNER ──────────────────────────────────────────────────────────
-  const OfflineBanner = () => (
-    <div className="bg-primary/95 backdrop-blur-sm text-white text-xs text-center py-1.5 px-4 flex items-center justify-center gap-2">
-      <WifiOff size={12} className="opacity-80" />
-      <span className="opacity-90">
-        {lang === 'HI'
-          ? 'ऑफलाइन मोड — कनेक्ट होने पर डेटा सिंक होगा'
-          : 'Offline mode — data will sync when connected'}
-      </span>
-    </div>
-  );
+  // ─── BANNER CONFIG ────────────────────────────────────────────────────────────
+  const BANNER = {
+    offline: {
+      bg: 'bg-red-600',
+      icon: WifiOff,
+      textEN: 'No internet — changes saved locally',
+      textHI: 'इंटरनेट नहीं — बदलाव स्थानीय रूप से सेव हुए',
+      spinning: false,
+    },
+    syncing: {
+      bg: 'bg-amber-500',
+      icon: Loader2,
+      textEN: 'Reconnected — syncing data...',
+      textHI: 'कनेक्ट हुआ — डेटा सिंक हो रहा है...',
+      spinning: true,
+    },
+    online: {
+      bg: 'bg-teal-600',
+      icon: Wifi,
+      textEN: 'Connected',
+      textHI: 'कनेक्टेड',
+      spinning: false,
+    },
+  };
+  const cfg = BANNER[connState];
+  const BannerIcon = cfg.icon;
 
   // ─── LANGUAGE TOGGLE ─────────────────────────────────────────────────────────
   const LanguageToggle = () => (
@@ -113,7 +166,6 @@ export default function Layout({
   // ─── TOP NAV BAR ─────────────────────────────────────────────────────────────
   const NavBar = () => (
     <div className="bg-card/95 backdrop-blur-md border-b border-gray-100/80 px-4 py-2 flex items-center justify-between min-h-[56px] sticky top-0 z-30">
-      {/* Left: back arrow + title */}
       <div className="flex items-center gap-2">
         {showBack && (
           <button
@@ -125,13 +177,9 @@ export default function Layout({
           </button>
         )}
         {title && (
-          <h1 className="text-base font-semibold text-primary leading-tight">
-            {title}
-          </h1>
+          <h1 className="text-base font-semibold text-primary leading-tight">{title}</h1>
         )}
       </div>
-
-      {/* Right: streak (student pages) + language toggle */}
       <div className="flex items-center gap-3">
         {!isTeacherPage && streak !== undefined && (
           <div className="flex items-center gap-1 text-sm font-semibold text-warm bg-warm/10 px-2.5 py-1 rounded-lg">
@@ -147,33 +195,20 @@ export default function Layout({
   // ─── COMPANION WIDGET WITH CHAT ───────────────────────────────────────────────
   const CompanionWidget = () => (
     <div className="fixed bottom-20 right-4 z-40 flex flex-col items-end gap-2">
-      {/* Chat bubble */}
       {chatOpen && (
         <div className="bg-card rounded-2xl shadow-xl border border-gray-100 w-72 max-h-64 flex flex-col animate-scaleIn origin-bottom-right">
-          {/* Chat header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
             <div className="flex items-center gap-2">
               <span className="text-lg">{companion?.emoji || '🦉'}</span>
-              <span className="text-sm font-semibold text-primary">
-                {companion?.nickname || 'Gyaan'}
-              </span>
+              <span className="text-sm font-semibold text-primary">{companion?.nickname || 'Gyaan'}</span>
             </div>
-            <button
-              onClick={() => setChatOpen(false)}
-              className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
-              aria-label="Close chat"
-            >
+            <button onClick={() => setChatOpen(false)} className="p-1 rounded-lg hover:bg-gray-100 transition-colors" aria-label="Close chat">
               <X size={14} className="text-muted" />
             </button>
           </div>
-
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-[80px] max-h-[140px]">
             {chatMessages.map((msg, i) => (
-              <div
-                key={i}
-                className="bg-warm/5 border border-warm/10 rounded-xl px-3 py-2 text-sm text-primary leading-relaxed animate-fadeIn"
-              >
+              <div key={i} className="bg-warm/5 border border-warm/10 rounded-xl px-3 py-2 text-sm text-primary leading-relaxed animate-fadeIn">
                 {msg.text}
               </div>
             ))}
@@ -185,8 +220,6 @@ export default function Layout({
             )}
             <div ref={chatEndRef} />
           </div>
-
-          {/* Ask for another hint */}
           <div className="px-3 py-2 border-t border-gray-100">
             <button
               onClick={handleAskHint}
@@ -199,8 +232,6 @@ export default function Layout({
           </div>
         </div>
       )}
-
-      {/* Companion avatar */}
       <button
         onClick={handleCompanionTap}
         className="flex flex-col items-center gap-1.5 animate-fadeIn group"
@@ -221,23 +252,29 @@ export default function Layout({
     </div>
   );
 
-  // ─── PAGE MAX-WIDTH ───────────────────────────────────────────────────────────
   const maxWidthClass = isTeacherPage ? 'max-w-5xl' : 'max-w-md';
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
-      {/* Always-on offline banner */}
-      <OfflineBanner />
+      {/* ── Three-state connectivity banner ── */}
+      <div
+        className={`${cfg.bg} text-white text-xs px-4 flex items-center justify-center gap-2 overflow-hidden transition-all duration-500 ease-in-out ${
+          bannerVisible ? 'py-1.5 opacity-100' : 'py-0 opacity-0 pointer-events-none'
+        }`}
+        style={{ maxHeight: bannerVisible ? '32px' : '0px' }}
+        role="status"
+        aria-live="polite"
+      >
+        <BannerIcon size={12} className={`flex-shrink-0 ${cfg.spinning ? 'animate-spin' : ''}`} />
+        <span className="opacity-95">{lang === 'HI' ? cfg.textHI : cfg.textEN}</span>
+      </div>
 
-      {/* Top nav bar (hidden on Splash) */}
       {showNav && <NavBar />}
 
-      {/* Page content */}
       <main className={`flex-1 ${maxWidthClass} mx-auto w-full px-4 py-6`}>
         {children}
       </main>
 
-      {/* Companion widget — student pages only */}
       {showCompanion && <CompanionWidget />}
     </div>
   );

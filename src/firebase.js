@@ -96,4 +96,23 @@ export function subscribeToStudents(onUpdate) {
   });
 }
 
+// ─── CONNECTION STATE: Simulate connection monitor ───────────────────────────
+export function subscribeToConnectionState(callback) {
+  // Firestore web SDK doesn't expose a simple .info/connected ref.
+  // Using navigator.onLine + window events for the MVP.
+  const handleOffline = () => callback('offline');
+  const handleOnline = () => callback('online');
+
+  window.addEventListener('offline', handleOffline);
+  window.addEventListener('online', handleOnline);
+
+  // Initial state
+  callback(typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'offline');
+
+  return () => {
+    window.removeEventListener('offline', handleOffline);
+    window.removeEventListener('online', handleOnline);
+  };
+}
+
 export { db };
