@@ -13,6 +13,7 @@ import { useApp } from '../App';
 import Layout from '../components/Layout';
 import { MATH_ACTIVITIES, STRINGS } from '../data';
 import { generateMathActivity } from '../gemini';
+import { updateStudentProgress } from '../firebase';
 
 // ── Filter activities by type ────────────────────────────────────────────────
 const ADDITION_ACTIVITIES = MATH_ACTIVITIES.filter((a) => a.type === 'addition');
@@ -105,6 +106,8 @@ export default function NumberWorld() {
             lang={lang}
             S={S}
             setCompanionState={setCompanionState}
+            appState={appState}
+            updateState={updateState}
           />
         )}
 
@@ -490,13 +493,28 @@ const ComparisonActivity = ({ lang, S, setCompanionState }) => {
     setChosen(side);
     const correct = side === correctSide;
     setCompanionState(correct ? 'happy' : 'encouraging');
-    setTimeout(() => {
+    setTimeout(async () => {
       setCompanionState('idle');
       if (roundIdx < rounds.length - 1) {
         setRoundIdx((r) => r + 1);
         setChosen(null);
       } else {
         setAllDone(true);
+        // Track completion in app state and Firebase
+        if (!appState.activitiesCompleted?.maths) {
+          const newCompleted = {
+            ...appState.activitiesCompleted,
+            maths: (appState.activitiesCompleted?.maths || 0) + 1
+          };
+          updateState({ activitiesCompleted: newCompleted });
+          
+          if (appState.firebaseStudentId) {
+            await updateStudentProgress(appState.firebaseStudentId, {
+              lastActivity: 'Number World',
+              activitiesCompleted: newCompleted
+            });
+          }
+        }
       }
     }, 1400);
   };

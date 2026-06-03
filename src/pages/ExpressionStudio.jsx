@@ -13,6 +13,7 @@ import { useApp } from '../App';
 import Layout from '../components/Layout';
 import { EXPRESSION_PROMPTS, STRINGS } from '../data';
 import { transcribeVoice, generateExpressionPrompt } from '../gemini';
+import { updateStudentProgress } from '../firebase';
 
 // ── Color palette for drawing ────────────────────────────────────────────────
 const COLORS = [
@@ -56,10 +57,26 @@ export default function ExpressionStudio() {
     setTimeout(() => setToast(false), 3500);
   };
 
-  const handleStoryReady = (storyText) => {
+  const handleStoryReady = async (storyText) => {
     setStory(storyText);
     setCompanionState('happy');
     setTimeout(() => setCompanionState('idle'), 2500);
+
+    // Track completion in app state and Firebase
+    if (!appState.activitiesCompleted?.expression) {
+      const newCompleted = {
+        ...appState.activitiesCompleted,
+        expression: (appState.activitiesCompleted?.expression || 0) + 1
+      };
+      updateState({ activitiesCompleted: newCompleted });
+      
+      if (appState.firebaseStudentId) {
+        await updateStudentProgress(appState.firebaseStudentId, {
+          lastActivity: 'Expression Studio',
+          activitiesCompleted: newCompleted
+        });
+      }
+    }
   };
 
   // ── Prompt navigation ─────────────────────────────────────────────────────

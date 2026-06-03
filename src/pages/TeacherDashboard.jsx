@@ -992,18 +992,3 @@ export default function TeacherDashboard() {
     </Layout>
   );
 }
-
-// ─── Telemetry Row sub-component ────────────────────────────────────────────
-// Renders a single metric row with label, value, and animated bar
-const TelemetryRow = ({ label, value, pct, color }) => (
-  <div className="flex items-center gap-2">
-    <span className="text-xs text-muted w-28 flex-shrink-0 truncate">{label}</span>
-    <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-      <div
-        className={`h-full rounded-full telemetry-bar ${color}`}
-        style={{ width: `${Math.max(pct, 5)}%` }}
-      />
-    </div>
-    <span className="text-xs font-medium text-primary w-20 text-right flex-shrink-0">{value}</span>
-  </div>
-);
