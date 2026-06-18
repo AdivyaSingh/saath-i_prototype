@@ -97,8 +97,8 @@ const Splash = () => {
             <div className="glass-card rounded-2xl px-5 py-4 text-center max-w-xs">
               <p className="text-sm text-muted leading-relaxed">
                 {lang === 'HI'
-                  ? 'भारत के 5.2 करोड़ बच्चों को सीखने में विशेष मदद की ज़रूरत है। साथी उनके लिए है।'
-                  : 'Supporting 52M children with learning disabilities in India.'}
+                  ? 'भारत के 2.5 करोड़ बच्चों को सीखने में विशेष मदद की ज़रूरत है। साथी उनके लिए है।'
+                  : 'Supporting 2.5 crore children with learning disabilities in India.'}
               </p>
             </div>
           </div>
