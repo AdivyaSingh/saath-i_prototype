@@ -10,7 +10,7 @@ import {
   Users, BarChart3, AlertTriangle, TrendingUp, TrendingDown,
   Minus, Flame, Lightbulb, Loader2, Mic, Image as ImageIcon,
   Eye, Hash, PenTool, Activity, Lock, CheckCircle2, KeyRound,
-  Delete, EyeOff,
+  Delete, EyeOff, Bot,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Layout from '../components/Layout';
@@ -597,6 +597,15 @@ export default function TeacherDashboard() {
             className="bg-white border border-gray-200 text-primary font-semibold text-sm px-3 py-1 rounded-lg min-h-[48px] hover:bg-gray-50 transition-colors"
           >
             {language === 'EN' ? 'हिंदी' : 'EN'}
+          </button>
+          {/* AI Assistant */}
+          <button
+            onClick={() => navigate('/teacher/assistant')}
+            aria-label="AI Teacher Assistant"
+            className="flex items-center gap-1.5 text-sm text-warm border border-warm/30 px-3 py-1 rounded-lg min-h-[48px] hover:bg-warm/10 transition-colors font-semibold"
+          >
+            <Bot size={14} />
+            <span className="hidden sm:inline">{language === 'HI' ? 'AI सहायक' : 'AI Assistant'}</span>
           </button>
           {/* Resource Library */}
           <button

@@ -16,9 +16,11 @@ import ReadingRoom     from './pages/ReadingRoom';
 import NumberWorld     from './pages/NumberWorld';
 import ExpressionStudio from './pages/ExpressionStudio';
 import AchievementWall from './pages/AchievementWall';
+import FocusZone       from './pages/FocusZone';
 import TeacherDashboard from './pages/TeacherDashboard';
 import IEPGenerator    from './pages/IEPGenerator';
 import ResourceLibrary from './pages/ResourceLibrary';
+import TeacherAssistant from './pages/TeacherAssistant';
 
 // ─── APP CONTEXT ──────────────────────────────────────────────────────────────
 export const AppContext = createContext(null);
@@ -130,11 +132,13 @@ export default function App() {
           <Route path="/number-world"      element={<NumberWorld />} />
           <Route path="/expression-studio" element={<ExpressionStudio />} />
           <Route path="/achievements"      element={<AchievementWall />} />
+          <Route path="/focus-zone"        element={<FocusZone />} />
 
           {/* Teacher journey */}
           <Route path="/teacher"           element={<TeacherDashboard />} />
           <Route path="/teacher/iep/:id"   element={<IEPGenerator />} />
           <Route path="/teacher/resources" element={<ResourceLibrary />} />
+          <Route path="/teacher/assistant" element={<TeacherAssistant />} />
 
           {/* 404 catch-all */}
           <Route path="*" element={<NotFound />} />

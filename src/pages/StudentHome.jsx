@@ -6,8 +6,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BookOpen, Calculator, Palette, Flame, Trophy, Heart,
-  ArrowRight, Sparkles, Wind, Sun, Moon, CloudSun,
+  BookOpen, Calculator, Palette, Brain, Flame, Trophy, Heart,
+  ArrowRight, Sparkles, Wind, Sun, Moon, CloudSun, LogOut,
 } from 'lucide-react';
 import { useApp } from '../App';
 import Layout from '../components/Layout';
@@ -23,6 +23,17 @@ const BREATH_PHASES = [
 
 // ─── ACTIVITY CARD DATA BUILDER ───────────────────────────────────────────────
 const buildActivities = (lang, S) => [
+  {
+    id: 'focus',
+    icon: Brain,
+    title: lang === 'HI' ? 'फोकस ज़ोन' : 'Focus Zone',
+    subtitle: lang === 'HI' ? 'ध्यान और याददाश्त के खेल' : 'Attention & memory warm-up',
+    duration: lang === 'HI' ? '~5 मिनट' : '~5 min',
+    borderColor: 'border-calm',
+    iconBg: 'bg-calm/10',
+    iconColor: 'text-calm',
+    route: '/focus-zone',
+  },
   {
     id: 'reading',
     icon: BookOpen,
@@ -64,7 +75,7 @@ const buildActivities = (lang, S) => [
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 const StudentHome = () => {
-  const { appState, updateState } = useApp();
+  const { appState, updateState, resetState } = useApp();
   const navigate = useNavigate();
   const lang = appState.language || 'EN';
   const S = STRINGS[lang] || STRINGS.EN;
@@ -273,7 +284,7 @@ const StudentHome = () => {
         <div className="flex items-center gap-1.5 min-h-[48px]">
           <Flame className="w-5 h-5 text-warm" />
           <span className="text-sm font-semibold text-primary">
-            {appState.streakDays || 4}
+            {appState.streakDays > 0 ? appState.streakDays : 0}
             {lang === 'HI' ? ' दिन' : '-day'}
           </span>
           {lang !== 'HI' && <span className="text-muted text-xs">streak</span>}
@@ -297,6 +308,16 @@ const StudentHome = () => {
         >
           <Heart className="w-4 h-4" />
           <span>{S.iAmStruggling}</span>
+        </button>
+
+        {/* Logout / switch student */}
+        <button
+          onClick={() => { resetState(); navigate('/', { replace: true }); }}
+          className="flex items-center gap-1.5 text-muted text-xs min-h-[48px] px-2 hover:text-red-500 transition-colors"
+          aria-label={lang === 'HI' ? 'लॉगआउट' : 'Log out'}
+          title={lang === 'HI' ? 'लॉगआउट / छात्र बदलें' : 'Log out / switch student'}
+        >
+          <LogOut className="w-4 h-4" />
         </button>
       </div>
 
