@@ -9,13 +9,14 @@ import {
   X, LogOut, ChevronDown, School, User, Wifi, BookOpen,
   Users, BarChart3, AlertTriangle, TrendingUp, TrendingDown,
   Minus, Flame, Lightbulb, Loader2, Mic, Image as ImageIcon,
-  Eye, Hash, PenTool, Activity,
+  Eye, Hash, PenTool, Activity, Lock, CheckCircle2, KeyRound,
+  Delete, EyeOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Layout from '../components/Layout';
 import { useApp } from '../App';
 import { DEMO_STUDENTS, STRINGS } from '../data';
-import { subscribeToStudents } from '../firebase';
+import { subscribeToStudents, verifyTeacherPin, createTeacher, generateClassCode } from '../firebase';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -163,25 +164,86 @@ export default function TeacherDashboard() {
   const { language, teacherLoggedIn, teacherName } = appState;
   const S = STRINGS[language];
 
-  // Login form local state
-  const [schoolCode, setSchoolCode]   = useState('SCH001');
-  const [inputName, setInputName]     = useState('Ms. Lata');
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  // ── Login / Register state ────────────────────────────────────────────────
+  const [loginMode, setLoginMode]           = useState('login');  // 'login' | 'register'
+  const [loginClassCode, setLoginClassCode] = useState('SCH001');
+  const [loginPin, setLoginPin]             = useState('');
+  const [isLoggingIn, setIsLoggingIn]       = useState(false);
+  const [loginError, setLoginError]         = useState('');
 
-  // Dashboard local state
-  const [activeTab, setActiveTab]             = useState('all');
-  const [sldSubFilter, setSldSubFilter]       = useState('all'); // sub-filter when tab = 'sld'
-  const [sortBy, setSortBy]                   = useState('status');
+  // Register form
+  const [regName, setRegName]               = useState('');
+  const [regSchool, setRegSchool]           = useState('');
+  const [regPin, setRegPin]                 = useState('');
+  const [regConfirmPin, setRegConfirmPin]   = useState('');
+  const [showRegPin, setShowRegPin]         = useState(false);
+  const [isRegistering, setIsRegistering]   = useState(false);
+  const [registerError, setRegisterError]   = useState('');
+  const [generatedCode, setGeneratedCode]   = useState(null); // shown after successful register
+
+  // ── Login handler (verifies PIN against Firestore teachers collection) ──────
+  const handleLogin = async () => {
+    const code = loginClassCode.trim().toUpperCase();
+    if (!code || loginPin.length < 4) return;
+    setIsLoggingIn(true);
+    setLoginError('');
+    const teacher = await verifyTeacherPin(code, loginPin);
+    setIsLoggingIn(false);
+    if (teacher) {
+      updateState({
+        teacherLoggedIn:  true,
+        teacherName:      teacher.name,
+        teacherClassCode: teacher.classCode,
+      });
+    } else {
+      setLoginError(
+        language === 'HI'
+          ? 'गलत कोड या PIN। कृपया फिर से कोशिश करें। (डेमो: SCH001 / 1234)'
+          : 'Incorrect class code or PIN. Please try again. (Demo: SCH001 / 1234)'
+      );
+      setLoginPin('');
+    }
+  };
+
+  // ── Register handler ──────────────────────────────────────────────────────
+  const handleRegister = async () => {
+    if (!regName.trim() || !regSchool.trim()) {
+      setRegisterError(language === 'HI' ? 'सभी फ़ील्ड भरें' : 'Please fill all fields');
+      return;
+    }
+    if (regPin.length < 4) {
+      setRegisterError(language === 'HI' ? '4 अंकों का PIN चाहिए' : 'PIN must be 4 digits');
+      return;
+    }
+    if (regPin !== regConfirmPin) {
+      setRegisterError(language === 'HI' ? 'PIN मेल नहीं खाता' : 'PINs do not match');
+      return;
+    }
+    setIsRegistering(true);
+    setRegisterError('');
+    const classCode = await generateClassCode(regSchool);
+    const result = await createTeacher({ name: regName.trim(), schoolName: regSchool.trim(), classCode, pin: regPin });
+    setIsRegistering(false);
+    if (result) {
+      setGeneratedCode(classCode);
+    } else {
+      setRegisterError(language === 'HI' ? 'पंजीकरण विफल। पुनः कोशिश करें।' : 'Registration failed. Please try again.');
+    }
+  };
+
+  // ── Dashboard local state ─────────────────────────────────────────────────
+  const [activeTab,       setActiveTab]       = useState('all');
+  const [sldSubFilter,    setSldSubFilter]    = useState('all');
+  const [sortBy,          setSortBy]          = useState('status');
   const [activeStudentId, setActiveStudentId] = useState(null);
 
   // Profile panel AI suggestion editing
   const [editingSuggestion, setEditingSuggestion] = useState(false);
-  const [suggestionText, setSuggestionText]       = useState('');
+  const [suggestionText,    setSuggestionText]    = useState('');
 
   // Firebase real-time students
   const [firebaseStudents, setFirebaseStudents] = useState([]);
 
-  // Subscribe to Firestore students
   useEffect(() => {
     const unsub = subscribeToStudents(setFirebaseStudents);
     return unsub;
@@ -201,16 +263,8 @@ export default function TeacherDashboard() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // ── Login handler ────────────────────────────────────────────────────────
-  const handleLogin = () => {
-    setIsLoggingIn(true);
-    setTimeout(() => {
-      updateState({ teacherLoggedIn: true, teacherName: inputName || 'Ms. Lata' });
-      setIsLoggingIn(false);
-    }, 500);
-  };
-
   // ── Filter + sort students ───────────────────────────────────────────────
+
   const filteredStudents = allStudents
     .filter(s => {
       if (activeTab === 'attention') return s.status === 'red' || s.status === 'yellow';
@@ -274,7 +328,7 @@ export default function TeacherDashboard() {
         setLanguage={(lang) => updateState({ language: lang })}
       >
         <div className="min-h-[calc(100vh-32px)] flex flex-col items-center justify-center px-4 py-8">
-          {/* Language toggle - rendered outside nav since showNav=false */}
+          {/* Language toggle */}
           <div className="absolute top-8 right-4">
             <button
               onClick={() => updateState({ language: language === 'EN' ? 'HI' : 'EN' })}
@@ -286,81 +340,217 @@ export default function TeacherDashboard() {
           </div>
 
           <div className="w-full max-w-sm animate-fadeIn">
-            {/* Logo area */}
-            <div className="text-center mb-8">
+            {/* Logo */}
+            <div className="text-center mb-6">
               <div className="w-16 h-16 bg-calm/15 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm border border-calm/20">
                 <BarChart3 size={32} className="text-calm" />
               </div>
-              <h1 className="text-2xl font-bold text-primary">
-                Saath-i
-              </h1>
-              <p className="text-calm font-semibold text-lg mt-0.5">
-                {S.loginTitle}
-              </p>
-              <p className="text-muted text-sm mt-2">
-                {language === 'HI'
-                  ? 'अपने छात्रों की प्रगति देखें'
-                  : "Monitor your students' progress"}
-              </p>
+              <h1 className="text-2xl font-bold text-primary">Saath-i</h1>
+              <p className="text-calm font-semibold text-lg mt-0.5">{S.loginTitle}</p>
             </div>
 
-            {/* Login card */}
-            <div className="bg-card rounded-2xl shadow-sm border border-gray-100 p-6">
-              {/* School Code */}
-              <div className="mb-4">
-                <label className="block text-sm font-semibold text-primary mb-1.5">
-                  {S.schoolCode}
-                </label>
-                <div className="relative">
-                  <School size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-                  <input
-                    type="text"
-                    value={schoolCode}
-                    onChange={e => setSchoolCode(e.target.value)}
-                    placeholder="e.g. SCH001"
-                    aria-label="School code"
-                    className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-4 py-3 text-base text-primary font-medium focus:border-calm focus:outline-none transition-colors min-h-[48px]"
-                  />
-                </div>
-              </div>
-
-              {/* Teacher Name */}
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-primary mb-1.5">
-                  {S.teacherName}
-                </label>
-                <div className="relative">
-                  <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-                  <input
-                    type="text"
-                    value={inputName}
-                    onChange={e => setInputName(e.target.value)}
-                    placeholder="Ms. Lata"
-                    aria-label="Teacher name"
-                    className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-4 py-3 text-base text-primary font-medium focus:border-calm focus:outline-none transition-colors min-h-[48px]"
-                  />
-                </div>
-              </div>
-
-              {/* Login button */}
-              <button
-                onClick={handleLogin}
-                disabled={isLoggingIn}
-                aria-label="Login as teacher"
-                className="btn-calm w-full"
-              >
-                {isLoggingIn
-                  ? <><Loader2 size={16} className="animate-spin" /> {language === 'HI' ? 'लॉगिन हो रहा है...' : 'Logging in...'}</>
-                  : S.loginButton}
-              </button>
-
-              {/* Demo note */}
-              <p className="text-xs text-muted text-center mt-4">
-                {language === 'HI'
-                  ? 'डेमो: स्कूल कोड SCH001, नाम Ms. Lata'
-                  : 'Demo: School Code SCH001, Name Ms. Lata'}
-              </p>
+            {/* Tab switcher: Login / Register */}
+            <div className="flex bg-gray-100 rounded-xl p-1 mb-5">
+              {['login','register'].map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => { setLoginMode(mode); setLoginError(''); setRegisterError(''); setGeneratedCode(null); }}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    loginMode === mode ? 'bg-white text-primary shadow-sm' : 'text-muted hover:text-primary'
+                  }`}
+                >
+                  {mode === 'login'
+                    ? (language === 'HI' ? 'लॉगिन' : 'Login')
+                    : (language === 'HI' ? 'पंजीकरण' : 'Register')}
+                </button>
+              ))}
             </div>
+
+            {/* ── LOGIN FORM ── */}
+            {loginMode === 'login' && (
+              <div className="bg-card rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+                {/* Class Code */}
+                <div>
+                  <label className="block text-sm font-semibold text-primary mb-1.5">{S.schoolCode}</label>
+                  <div className="relative">
+                    <School size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                    <input
+                      type="text"
+                      value={loginClassCode}
+                      onChange={e => { setLoginClassCode(e.target.value.toUpperCase()); setLoginError(''); }}
+                      placeholder="SCH001"
+                      aria-label="School code"
+                      className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-4 py-3 text-base text-primary font-mono tracking-widest focus:border-calm focus:outline-none transition-colors min-h-[48px]"
+                    />
+                  </div>
+                </div>
+
+                {/* PIN */}
+                <div>
+                  <label className="block text-sm font-semibold text-primary mb-1.5">
+                    {language === 'HI' ? 'आपका PIN' : 'Your PIN'}
+                  </label>
+                  <div className="relative">
+                    <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                    <input
+                      type={showRegPin ? 'text' : 'password'}
+                      value={loginPin}
+                      onChange={e => { setLoginPin(e.target.value.replace(/\D/g,'').slice(0,4)); setLoginError(''); }}
+                      placeholder="••••"
+                      maxLength={4}
+                      aria-label="PIN"
+                      className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-10 py-3 text-base text-primary font-mono tracking-widest focus:border-calm focus:outline-none transition-colors min-h-[48px]"
+                    />
+                    <button onClick={() => setShowRegPin(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted" type="button">
+                      {showRegPin ? <EyeOff size={16}/> : <Eye size={16}/>}
+                    </button>
+                  </div>
+                </div>
+
+                {loginError && (
+                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3">
+                    <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-red-700">{loginError}</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleLogin}
+                  disabled={isLoggingIn || loginPin.length < 4 || !loginClassCode.trim()}
+                  aria-label="Login as teacher"
+                  className="btn-calm w-full disabled:opacity-50"
+                >
+                  {isLoggingIn
+                    ? <><Loader2 size={16} className="animate-spin" /> {language === 'HI' ? 'जाँच रहे हैं...' : 'Verifying...'}</>
+                    : <><KeyRound size={16}/> {S.loginButton}</>}
+                </button>
+
+                <p className="text-xs text-muted text-center">
+                  {language === 'HI' ? 'डेमो: SCH001 / PIN: 1234' : 'Demo: Code SCH001 / PIN: 1234'}
+                </p>
+              </div>
+            )}
+
+            {/* ── REGISTER FORM ── */}
+            {loginMode === 'register' && !generatedCode && (
+              <div className="bg-card rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+                <p className="text-xs text-muted text-center">
+                  {language === 'HI'
+                    ? 'पंजीकरण करें और अपना class code पाएं'
+                    : 'Register to get your unique class code for students'}
+                </p>
+
+                {/* Name */}
+                <div>
+                  <label className="block text-sm font-semibold text-primary mb-1.5">{S.teacherName}</label>
+                  <div className="relative">
+                    <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                    <input type="text" value={regName} onChange={e => setRegName(e.target.value)} placeholder="Ms. Lata"
+                      className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-4 py-3 text-base text-primary font-medium focus:border-calm focus:outline-none min-h-[48px]"
+                      aria-label="Teacher name" />
+                  </div>
+                </div>
+
+                {/* School */}
+                <div>
+                  <label className="block text-sm font-semibold text-primary mb-1.5">
+                    {language === 'HI' ? 'स्कूल का नाम' : 'School Name'}
+                  </label>
+                  <div className="relative">
+                    <School size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                    <input type="text" value={regSchool} onChange={e => setRegSchool(e.target.value)} placeholder="Team: CaseLyticals"
+                      className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-4 py-3 text-base text-primary font-medium focus:border-calm focus:outline-none min-h-[48px]"
+                      aria-label="School name" />
+                  </div>
+                </div>
+
+                {/* Create PIN */}
+                <div>
+                  <label className="block text-sm font-semibold text-primary mb-1.5">
+                    {language === 'HI' ? 'PIN बनाएं (4 अंक)' : 'Create PIN (4 digits)'}
+                  </label>
+                  <div className="relative">
+                    <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                    <input type={showRegPin ? 'text' : 'password'} value={regPin}
+                      onChange={e => setRegPin(e.target.value.replace(/\D/g,'').slice(0,4))}
+                      placeholder="••••" maxLength={4}
+                      className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-10 py-3 text-base text-primary font-mono tracking-widest focus:border-calm focus:outline-none min-h-[48px]"
+                      aria-label="Create PIN" />
+                    <button onClick={() => setShowRegPin(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted" type="button">
+                      {showRegPin ? <EyeOff size={16}/> : <Eye size={16}/>}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm PIN */}
+                <div>
+                  <label className="block text-sm font-semibold text-primary mb-1.5">
+                    {language === 'HI' ? 'PIN पुनः दर्ज करें' : 'Confirm PIN'}
+                  </label>
+                  <div className="relative">
+                    <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                    <input type={showRegPin ? 'text' : 'password'} value={regConfirmPin}
+                      onChange={e => setRegConfirmPin(e.target.value.replace(/\D/g,'').slice(0,4))}
+                      placeholder="••••" maxLength={4}
+                      className={`w-full border-2 rounded-xl pl-10 pr-4 py-3 text-base text-primary font-mono tracking-widest focus:outline-none min-h-[48px] ${
+                        regConfirmPin.length === 4 && regPin !== regConfirmPin
+                          ? 'border-red-300 focus:border-red-400'
+                          : 'border-gray-200 focus:border-calm'
+                      }`}
+                      aria-label="Confirm PIN" />
+                  </div>
+                  {regConfirmPin.length === 4 && regPin !== regConfirmPin && (
+                    <p className="text-xs text-red-500 mt-1">{language === 'HI' ? 'PIN मेल नहीं खाता' : 'PINs do not match'}</p>
+                  )}
+                </div>
+
+                {registerError && (
+                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3">
+                    <AlertTriangle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-red-700">{registerError}</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleRegister}
+                  disabled={isRegistering || !regName.trim() || !regSchool.trim() || regPin.length < 4 || regPin !== regConfirmPin}
+                  className="btn-calm w-full disabled:opacity-50"
+                >
+                  {isRegistering
+                    ? <><Loader2 size={16} className="animate-spin" /> {language === 'HI' ? 'बना रहे हैं...' : 'Creating...'}</>
+                    : (language === 'HI' ? 'पंजीकरण करें →' : 'Register & Get Code →')}
+                </button>
+              </div>
+            )}
+
+            {/* ── REGISTER SUCCESS ── */}
+            {loginMode === 'register' && generatedCode && (
+              <div className="bg-card rounded-2xl shadow-sm border border-gray-100 p-6 text-center space-y-4 animate-fadeIn">
+                <div className="w-14 h-14 bg-success/10 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle2 size={28} className="text-success" />
+                </div>
+                <h3 className="text-lg font-bold text-primary">
+                  {language === 'HI' ? 'पंजीकरण सफल!' : 'Registration successful!'}
+                </h3>
+                <p className="text-sm text-muted">
+                  {language === 'HI' ? 'आपका Class Code:' : 'Your Class Code is:'}
+                </p>
+                <div className="bg-primary/5 border-2 border-primary/20 rounded-xl py-4 px-6">
+                  <p className="text-3xl font-bold text-primary tracking-widest font-mono">{generatedCode}</p>
+                </div>
+                <p className="text-xs text-muted">
+                  {language === 'HI'
+                    ? 'यह कोड अपने छात्रों को दें ताकि वे आपकी कक्षा से जुड़ सकें।'
+                    : 'Share this code with your students so they can join your class.'}
+                </p>
+                <button
+                  onClick={() => { setLoginMode('login'); setLoginClassCode(generatedCode); setGeneratedCode(null); }}
+                  className="btn-calm w-full"
+                >
+                  {language === 'HI' ? 'अब लॉगिन करें →' : 'Now Login →'}
+                </button>
+              </div>
+            )}
 
             {/* Back to student view */}
             <button

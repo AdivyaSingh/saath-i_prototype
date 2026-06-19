@@ -4,6 +4,7 @@
 // Clean design with gradient background, staggered animations, and no emojis.
 
 import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useApp } from '../App';
 import { STRINGS } from '../data';
 import Layout from '../components/Layout';
@@ -44,8 +45,29 @@ const Splash = () => {
   const { appState, updateState } = useApp();
   const lang = appState.language;
   const S = STRINGS[lang] || STRINGS.EN;
-
   const badges = FOOTER_BADGES(lang);
+
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  // Auto-login: if this device already has a completed student session, go straight to /home
+  useEffect(() => {
+    if (appState.studentId && appState.studentName && appState.sldType) {
+      navigate('/home', { replace: true });
+    } else {
+      setCheckingSession(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-6xl mb-4 animate-pulse">🦉</div>
+          <p className="text-muted text-sm">{lang === 'HI' ? 'लोड हो रहा है...' : 'Loading...'}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Layout
@@ -115,7 +137,7 @@ const Splash = () => {
             </button>
 
             <button
-              onClick={() => navigate('/onboarding?mode=returning')}
+              onClick={() => navigate('/return')}
               className="btn-ghost w-full text-lg"
               aria-label={S.haveClassCode}
             >

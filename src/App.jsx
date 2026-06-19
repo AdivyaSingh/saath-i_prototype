@@ -2,20 +2,22 @@
 // Router + AppContext provider + all shared state.
 // All pages are imported and routed here. No separate context file.
 
-import { createContext, useContext, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { seedDemoData } from './firebase';
 
 // Page imports
-import Splash from './pages/Splash';
-import Onboarding from './pages/Onboarding';
-import Screening from './pages/Screening';
-import StudentHome from './pages/StudentHome';
-import ReadingRoom from './pages/ReadingRoom';
-import NumberWorld from './pages/NumberWorld';
+import Splash          from './pages/Splash';
+import Onboarding      from './pages/Onboarding';
+import ReturnStudent   from './pages/ReturnStudent';
+import Screening       from './pages/Screening';
+import StudentHome     from './pages/StudentHome';
+import ReadingRoom     from './pages/ReadingRoom';
+import NumberWorld     from './pages/NumberWorld';
 import ExpressionStudio from './pages/ExpressionStudio';
 import AchievementWall from './pages/AchievementWall';
 import TeacherDashboard from './pages/TeacherDashboard';
-import IEPGenerator from './pages/IEPGenerator';
+import IEPGenerator    from './pages/IEPGenerator';
 import ResourceLibrary from './pages/ResourceLibrary';
 
 // ─── APP CONTEXT ──────────────────────────────────────────────────────────────
@@ -30,34 +32,38 @@ export const useApp = () => useContext(AppContext);
 // ─── DEFAULT STATE ─────────────────────────────────────────────────────────────
 const defaultState = {
   // Student profile
-  studentName: 'Arjun',          // pre-filled for demo
-  studentClass: 4,
-  sldType: null,                 // null until screening determines it
-  language: 'EN',                // 'EN' | 'HI'
-  companion: { id: 'owl', emoji: '🦉', nickname: 'Gyaan' },
+  studentName:  null,   // null = not yet registered
+  studentClass: null,
+  sldType:      null,   // null until screening determines it
+  language:    'EN',    // 'EN' | 'HI'
+  companion:    null,   // null until companion is chosen
+
+  // Student identity (PIN-based, class-code-linked)
+  classCode:        null, // The class code this student belongs to (e.g. 'SCH001')
+  studentId:        null, // Deterministic Firestore document ID (e.g. 'arjun-sch001')
+  firebaseStudentId: null, // Alias for studentId — kept for backward compat with activity pages
+  studentPin:       null, // 4-digit PIN set during registration (MVP: stored in state)
 
   // Demo flags
-  isDemoMode: true,              // when true, screening is tuned toward dyslexia for demo walkthrough
+  isDemoMode:       true,
   showOfflineBanner: true,
-  streakDays: 4,
+  streakDays:       0,   // 0 = fresh start; computed from activity history in production
 
-  // Screening results (stored for teacher dashboard reference)
+  // Screening results
   screeningResults: null,
-
-  // Firebase student document ID (set after screening saves to Firestore)
-  firebaseStudentId: null,
 
   // Activity progress tracking
   activitiesCompleted: {
-    reading: 0,
-    maths: 0,
+    reading:    0,
+    maths:      0,
     expression: 0,
   },
 
   // Teacher state
-  teacherLoggedIn: false,
-  teacherName: 'Ms. Lata',
-  activeStudentId: null,         // which student's panel is open in dashboard
+  teacherLoggedIn:  false,
+  teacherName:     'Ms. Lata',
+  teacherClassCode: null, // The class code of the logged-in teacher
+  activeStudentId:  null, // which student's panel is open in dashboard
 };
 
 // ─── 404 PAGE ──────────────────────────────────────────────────────────────────
@@ -98,30 +104,36 @@ export default function App() {
   };
 
   /**
-   * Reset state to defaults — useful for starting fresh demo.
+   * Reset state to defaults — useful for logging out or starting a fresh demo.
    */
   const resetState = () => {
     localStorage.removeItem('saathi_state');
     setAppState(defaultState);
   };
 
+  // Seed Firestore with demo class SCH001 + teacher Ms. Lata on first load
+  useEffect(() => {
+    seedDemoData().catch(console.error);
+  }, []);
+
   return (
     <AppContext.Provider value={{ appState, updateState, resetState }}>
       <BrowserRouter>
         <Routes>
           {/* Student journey */}
-          <Route path="/" element={<Splash />} />
-          <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/screening" element={<Screening />} />
-          <Route path="/home" element={<StudentHome />} />
-          <Route path="/reading-room" element={<ReadingRoom />} />
-          <Route path="/number-world" element={<NumberWorld />} />
+          <Route path="/"                  element={<Splash />} />
+          <Route path="/onboarding"        element={<Onboarding />} />
+          <Route path="/return"            element={<ReturnStudent />} />
+          <Route path="/screening"         element={<Screening />} />
+          <Route path="/home"              element={<StudentHome />} />
+          <Route path="/reading-room"      element={<ReadingRoom />} />
+          <Route path="/number-world"      element={<NumberWorld />} />
           <Route path="/expression-studio" element={<ExpressionStudio />} />
-          <Route path="/achievements" element={<AchievementWall />} />
+          <Route path="/achievements"      element={<AchievementWall />} />
 
           {/* Teacher journey */}
-          <Route path="/teacher" element={<TeacherDashboard />} />
-          <Route path="/teacher/iep/:id" element={<IEPGenerator />} />
+          <Route path="/teacher"           element={<TeacherDashboard />} />
+          <Route path="/teacher/iep/:id"   element={<IEPGenerator />} />
           <Route path="/teacher/resources" element={<ResourceLibrary />} />
 
           {/* 404 catch-all */}

@@ -755,23 +755,29 @@ export default function Screening() {
         },
       });
 
-      // Save to Firebase
+      // Save to Firebase using the deterministic student ID set during Onboarding
       const saveToFirebase = async () => {
         try {
-          const studentId = `student_${Date.now()}`;
+          const studentId = appState.studentId || appState.firebaseStudentId;
+          if (!studentId) {
+            console.warn('[Screening] No studentId in appState — skipping Firebase save.');
+            return;
+          }
           const maxScore = Math.max(result.dyslexiaScore, result.dyscalculiaScore, result.dysgraphiaScore);
           await saveStudentToFirebase({
             id: studentId,
             name: appState.studentName || 'Student',
             class: appState.studentClass || 4,
+            classCode: (appState.classCode || 'SCH001').toUpperCase(),
             school: 'Saath-i App User',
             sldType: result.detectedType,
             severity: maxScore > 0.6 ? 'moderate' : 'mild',
             language: appState.language,
             lastActive: 'Just now',
-            streakDays: appState.streakDays || 1,
+            streakDays: 1,
             status: 'green',
             companion: appState.companion,
+            pin: appState.studentPin || null, // stored for PIN-based login
             masteryMap: {
               'Sound Matching': result.dyslexiaScore < 0.3 ? 'mastered' : result.dyslexiaScore < 0.6 ? 'in_progress' : 'struggling',
               'Number Sense': result.dyscalculiaScore < 0.3 ? 'mastered' : result.dyscalculiaScore < 0.6 ? 'in_progress' : 'struggling',
@@ -789,9 +795,10 @@ export default function Screening() {
             },
             telemetry: telemetryData,
           });
-          updateState({ firebaseStudentId: studentId });
+          // firebaseStudentId is already set in appState from Onboarding — just confirm
+          updateState({ firebaseStudentId: studentId, streakDays: 1 });
         } catch (err) {
-          console.error('Firebase save failed:', err);
+          console.error('[Screening] Firebase save failed:', err);
         }
       };
       saveToFirebase();
