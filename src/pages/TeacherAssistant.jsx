@@ -14,9 +14,21 @@ import {
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../App';
-import { DEMO_STUDENTS } from '../data';
+import { DEMO_STUDENTS, SUPPORT_AREAS } from '../data';
 import { callGemini } from '../gemini';
 import { subscribeToStudents } from '../firebase';
+
+// Human-readable label for a support area id
+const supportAreaLabel = (areaId, language) => {
+  const area = SUPPORT_AREAS.find(a => a.id === areaId);
+  if (!area) return language === 'HI' ? 'सहायता चाहिए' : 'Support needed';
+  return language === 'HI' ? area.labelHI : area.labelEN;
+};
+
+const tierShortLabel = (tier, language) => {
+  const n = tier || 1;
+  return language === 'HI' ? `स्तर ${n}` : `Tier ${n}`;
+};
 
 // ─── SUGGESTED PROMPTS ────────────────────────────────────────────────────────
 // Shown as quick-tap chips before the first message. Grouped by intent.
@@ -84,8 +96,12 @@ function buildAssistantPrompt(userMessage, student, conversationHistory, languag
     ? (student.errorPatterns || []).map(ep => `${ep.pattern} (${ep.trend})`).join('; ') || 'None recorded'
     : 'Not available';
 
-  const sldContext = student
-    ? `The student is ${student.name}, Class ${student.class}, at ${student.school}. Their support profile shows: ${student.sldType} (${student.severity}). Mastered: ${mastered}. Currently struggling with: ${struggling}. Key error patterns: ${errorPatterns}. This week: ${student.weeklyStats?.timeSpent || 'N/A'} spent, ${student.weeklyStats?.activitiesCompleted || 0} activities completed.`
+  const supportContext = student
+    ? `The student is ${student.name}, Class ${student.class}, at ${student.school}. Their support profile shows they may benefit from support in: ${
+        student.supportProfile
+          ? Object.entries(student.supportProfile).filter(([, lvl]) => lvl === 'some' || lvl === 'high').map(([area]) => area).join(', ') || 'no specific area flagged'
+          : 'not yet screened'
+      } (currently Tier ${student.tier || 1}). Mastered: ${mastered}. Currently struggling with: ${struggling}. Key error patterns: ${errorPatterns}. This week: ${student.weeklyStats?.timeSpent || 'N/A'} spent, ${student.weeklyStats?.activitiesCompleted || 0} activities completed.`
     : 'No specific student selected. Provide general classroom strategies.';
 
   // Build conversation history string
@@ -106,7 +122,7 @@ IMPORTANT PRINCIPLES:
 - Always end with one concrete next step the teacher can take TODAY.
 
 Student context:
-${sldContext}
+${supportContext}
 ${historyStr}
 
 Teacher's question: ${userMessage}
@@ -275,7 +291,7 @@ export default function TeacherAssistant() {
                 <p className="font-semibold">{student.name}</p>
                 <p className="text-xs text-muted">
                   {language === 'HI' ? `कक्षा ${student.class}` : `Class ${student.class}`}
-                  {student.sldType ? ` · ${student.sldType}` : ''}
+                  {student.primarySupportArea ? ` · ${supportAreaLabel(student.primarySupportArea, language)}` : ''}
                 </p>
               </div>
               {selectedStudentId === student.id && (
@@ -349,12 +365,12 @@ export default function TeacherAssistant() {
             <div className="mt-2 bg-calm/5 border border-calm/20 rounded-xl px-3 py-2 flex flex-wrap gap-3 text-xs text-muted animate-fadeIn">
               <span>
                 {language === 'HI' ? 'सहायता क्षेत्र: ' : 'Support need: '}
-                <span className="text-primary font-semibold capitalize">{selectedStudent.sldType}</span>
+                <span className="text-primary font-semibold">{supportAreaLabel(selectedStudent.primarySupportArea, language)}</span>
               </span>
               <span>·</span>
               <span>
-                {language === 'HI' ? 'स्तर: ' : 'Severity: '}
-                <span className="text-primary font-semibold capitalize">{selectedStudent.severity}</span>
+                {language === 'HI' ? 'स्तर: ' : 'Tier: '}
+                <span className="text-primary font-semibold">{tierShortLabel(selectedStudent.tier, language)}</span>
               </span>
               <span>·</span>
               <span>

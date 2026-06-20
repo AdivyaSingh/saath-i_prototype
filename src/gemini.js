@@ -127,7 +127,7 @@ Include 5-8 syllable breakdowns for the harder words in the passage.`;
  * Returns parsed object or null.
  */
 export async function generateMathActivity(classLevel = 4, type = 'addition') {
-  const prompt = `Generate a simple math activity for a Class ${classLevel} Indian school student with dyscalculia.
+  const prompt = `Generate a simple math activity for a Class ${classLevel} Indian school student who benefits from numeracy support.
 Type: ${type}
 
 The activity should:
@@ -167,7 +167,7 @@ Return ONLY valid JSON with NO markdown backticks:
  */
 export async function generateExpressionPrompt(classLevel = 4, language = 'EN') {
   const lang = language === 'HI' ? 'Hindi' : 'English';
-  const prompt = `Generate a creative story-starter prompt for a Class ${classLevel} Indian school student with dysgraphia.
+  const prompt = `Generate a creative story-starter prompt for a Class ${classLevel} Indian school student who benefits from writing support.
 
 The prompt should:
 - Be imaginative and open-ended
@@ -194,6 +194,8 @@ Return ONLY valid JSON with NO markdown backticks:
 
 /**
  * Generates a full IEP for the IEP Generator page.
+ * Combines four real data sources: the support profile (from screening/mastery data),
+ * teacher observations, progress history, and specialist notes (if any).
  * Returns formatted text string or null.
  */
 export async function generateIEP(student) {
@@ -202,29 +204,65 @@ export async function generateIEP(student) {
   const struggling = Object.entries(student.masteryMap)
     .filter(([, v]) => v === 'struggling').map(([k]) => k);
 
-  const prompt = `Generate a professional Individualised Education Plan (IEP) for an Indian school student. Align with NIEPID and Samagra Shiksha guidelines. Use clear, simple language for classroom teachers.
+  // Support profile, expressed by area and level — never as a named condition.
+  const supportAreaLines = student.supportProfile
+    ? Object.entries(student.supportProfile)
+        .filter(([, level]) => level === 'some' || level === 'high')
+        .map(([area, level]) => `${area} (${level === 'high' ? 'significant support' : 'some support'})`)
+        .join(', ') || 'No significant support areas flagged'
+    : 'Not yet screened';
+
+  const tierLabel = { 1: 'Tier 1 - Classroom Support', 2: 'Tier 2 - Targeted Intervention', 3: 'Tier 3 - Specialist Referral' };
+  const tierText = tierLabel[student.tier] || 'Tier 1 - Classroom Support';
+
+  // Real data window, derived from how many weeks of progress history actually exist —
+  // never a hardcoded number.
+  const dataWeeks = Array.isArray(student.progressHistory) ? student.progressHistory.length : 0;
+  const dataWindowText = dataWeeks > 0
+    ? `${dataWeeks} week${dataWeeks === 1 ? '' : 's'} of app activity data`
+    : 'Limited app activity data so far';
+
+  // Teacher observations — real classroom notes, not assumed.
+  const observationsText = (student.teacherObservations && student.teacherObservations.length > 0)
+    ? student.teacherObservations.map(o => `- [${o.date}, ${o.author}] ${o.note}`).join('\n')
+    : 'No teacher observations recorded yet.';
+
+  // Specialist notes — only included if a referral has actually happened.
+  const specialistText = (student.specialistNotes && student.specialistNotes.length > 0)
+    ? student.specialistNotes.map(n => `- [${n.date}, ${n.author}] ${n.note}`).join('\n')
+    : 'No specialist notes on file (student has not been referred, or referral is pending).';
+
+  const prompt = `Generate a professional Individualised Education Plan (IEP) for an Indian school student. Align with NIEPID and Samagra Shiksha guidelines. Use clear, simple, support-based language for classroom teachers.
+
+CRITICAL LANGUAGE RULE: Never diagnose or name a condition (do not say "has dyslexia/dysgraphia/dyscalculia" or similar). Always describe needs as "may benefit from support in [area]" using the support areas given below. Use the Tier 1/2/3 framework (classroom support / targeted intervention / specialist referral) when describing the level of support needed.
 
 Student Details:
 - Name: ${student.name}
 - Class: ${student.class}
 - School: ${student.school}
-- SLD Type: ${student.sldType}
-- Severity: ${student.severity}
+- Support areas needing attention: ${supportAreaLines}
+- Current tier: ${tierText}
 - Mastered concepts: ${mastered.join(', ') || 'None yet'}
 - Struggling areas: ${struggling.join(', ') || 'None identified'}
-- Key error patterns: ${student.errorPatterns.map(e => e.pattern).join('; ')}
-- Weeks of app data: 6
+- Key error patterns: ${student.errorPatterns.map(e => e.pattern).join('; ') || 'None recorded'}
+- Data window: ${dataWindowText}
+
+Teacher observations (classroom notes):
+${observationsText}
+
+Specialist notes (if a referral has occurred):
+${specialistText}
 
 Generate the IEP with exactly these 5 sections, using these exact headings:
 
 ## Student Performance Summary
-(2-3 sentences describing current reading/learning level and primary difficulty)
+(2-3 sentences describing current learning level and primary support need, written using support-based language and weaving in at least one teacher observation if available)
 
 ## Learning Objectives
 (3 SMART goals — specific, measurable, achievable in 3 months. Format as numbered list.)
 
 ## Recommended Accommodations
-(4-5 specific classroom accommodations. Format as numbered list.)
+(4-5 specific classroom accommodations, informed by the support areas, error patterns, and any specialist notes. Format as numbered list.)
 
 ## Review Date
 (Set to 3 months from today. Write: "This IEP will be reviewed on [date].")
@@ -242,7 +280,7 @@ Generate the IEP with exactly these 5 sections, using these exact headings:
  */
 export async function transcribeVoice(transcript) {
   if (!transcript) return '';
-  const prompt = `A child with dysgraphia just told this story aloud. Clean up the transcription lightly — fix obvious speech errors and add punctuation — but keep their voice and words:
+  const prompt = `A child who benefits from writing support just told this story aloud. Clean up the transcription lightly — fix obvious speech errors and add punctuation — but keep their voice and words:
 "${transcript}"
 Return only the cleaned story text, no commentary.`;
   const result = await callGemini(prompt);
@@ -254,17 +292,22 @@ Return only the cleaned story text, no commentary.`;
  * Used in teacher dashboard for dynamic insights.
  */
 export async function generateStudentInsight(student) {
-  const prompt = `You are an educational AI assistant helping Indian school teachers support students with ${student.sldType}.
+  const topAreas = student.supportProfile
+    ? Object.entries(student.supportProfile)
+        .filter(([, level]) => level === 'some' || level === 'high')
+        .map(([area]) => area).join(', ') || 'no specific area flagged'
+    : 'not yet screened';
+
+  const prompt = `You are an educational AI assistant helping Indian school teachers support a student who may benefit from support in: ${topAreas}.
 
 Student: ${student.name}, Class ${student.class}
-SLD: ${student.sldType} (${student.severity})
 This week: ${student.weeklyStats.timeSpent} spent, ${student.weeklyStats.activitiesCompleted} activities, asked for help ${student.weeklyStats.helpRequests} times
 Error patterns: ${student.errorPatterns.map(e => `${e.pattern} (${e.trend})`).join('; ')}
 
 Generate a brief, actionable teaching suggestion (2-3 sentences) that:
 - References specific observations from the data
 - Suggests a concrete accommodation or strategy
-- Uses encouraging, professional language
+- Uses encouraging, professional, support-based language (never names a diagnosis)
 
 Return only the suggestion text, no headers or formatting.`;
 

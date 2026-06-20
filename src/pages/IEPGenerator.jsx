@@ -11,17 +11,37 @@ import {
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../App';
-import { DEMO_STUDENTS, STRINGS } from '../data';
+import { DEMO_STUDENTS, STRINGS, SUPPORT_AREAS } from '../data';
 import { generateIEP } from '../gemini';
 import { subscribeToStudents } from '../firebase';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-// SLD badge CSS classes from index.css
-const sldBadgeClass = {
-  dyslexia:    'badge badge-dyslexia',
-  dyscalculia: 'badge badge-dyscalculia',
-  dysgraphia:  'badge badge-dysgraphia',
+// Support area badge CSS classes from index.css
+const supportAreaBadgeClass = {
+  reading:      'badge badge-reading',
+  writing:      'badge badge-writing',
+  numeracy:     'badge badge-numeracy',
+  attention:    'badge badge-attention',
+  memory:       'badge badge-memory',
+  organisation: 'badge badge-organisation',
+};
+
+const tierBadgeClass = {
+  1: 'badge badge-tier-1',
+  2: 'badge badge-tier-2',
+  3: 'badge badge-tier-3',
+};
+
+const supportAreaLabel = (areaId, language) => {
+  const area = SUPPORT_AREAS.find(a => a.id === areaId);
+  if (!area) return language === 'HI' ? 'सहायता चाहिए' : 'Support needed';
+  return language === 'HI' ? area.labelHI : area.labelEN;
+};
+
+const tierShortLabel = (tier, language) => {
+  const n = tier || 1;
+  return language === 'HI' ? `स्तर ${n}` : `Tier ${n}`;
 };
 
 // Parse Gemini markdown into sections split by "## Heading"
@@ -111,7 +131,21 @@ export default function IEPGenerator() {
 
   // Derived data for Step 1 summary
   const mastered   = student ? Object.entries(student.masteryMap).filter(([, v]) => v === 'mastered').map(([k]) => k) : [];
-  const struggling = student ? Object.entries(student.masteryMap).filter(([, v]) => v === 'struggling').map(([k]) => k) : [];
+  // Support areas come straight from the support profile (areas at 'some' or 'high'),
+  // so this section can never disagree with the tier, the primary support area, or the
+  // error patterns shown below. This removes the old "None identified" contradiction.
+  const LEVEL_ORDER = { high: 2, some: 1, low: 0 };
+  const supportAreas = (student && student.supportProfile)
+    ? SUPPORT_AREAS
+        .filter(a => student.supportProfile[a.id] === 'some' || student.supportProfile[a.id] === 'high')
+        .map(a => ({ id: a.id, level: student.supportProfile[a.id] }))
+        .sort((x, y) => LEVEL_ORDER[y.level] - LEVEL_ORDER[x.level])
+    : [];
+  // Specific still-developing skills (from mastery data), shown as supporting detail
+  // under the support areas. Includes both 'struggling' and 'not_started' concepts.
+  const focusSkills = student
+    ? Object.entries(student.masteryMap).filter(([, v]) => v === 'struggling' || v === 'not_started').map(([k]) => k)
+    : [];
 
   // Loading steps based on language
   const loadingSteps = language === 'HI' ? LOADING_STEPS_HI : LOADING_STEPS_EN;
@@ -241,14 +275,25 @@ export default function IEPGenerator() {
           ═══════════════════════════════════════════════════════════════════ */}
       {currentStep === 1 && (
         <div className="animate-fadeIn">
-          <h1 className="text-xl font-bold text-primary mb-1">
-            {language === 'HI'
-              ? `${student.name} के पिछले 6 हफ्तों के डेटा के आधार पर:`
-              : `Based on ${student.name}'s data from the last 6 weeks:`}
-          </h1>
-          <p className="text-sm text-muted mb-5">
-            {language === 'HI' ? '6 हफ्तों का ऐप डेटा एकत्र किया गया' : '6 weeks of app data collected'}
-          </p>
+          {(() => {
+            const dataWeeks = Array.isArray(student.progressHistory) ? student.progressHistory.length : 0;
+            const windowLabelEN = dataWeeks > 0 ? `the last ${dataWeeks} week${dataWeeks === 1 ? '' : 's'}` : 'limited app activity so far';
+            const windowLabelHI = dataWeeks > 0 ? `पिछले ${dataWeeks} हफ्तों` : 'अभी सीमित ऐप गतिविधि';
+            return (
+              <>
+                <h1 className="text-xl font-bold text-primary mb-1">
+                  {language === 'HI'
+                    ? `${student.name} के ${windowLabelHI} के डेटा के आधार पर:`
+                    : `Based on ${student.name}'s data from ${windowLabelEN}:`}
+                </h1>
+                <p className="text-sm text-muted mb-5">
+                  {language === 'HI'
+                    ? `${windowLabelHI} का ऐप डेटा एकत्र किया गया, साथ ही शिक्षक टिप्पणियाँ`
+                    : `${dataWeeks > 0 ? `${dataWeeks} week${dataWeeks === 1 ? '' : 's'}` : 'Limited'} of app data collected, plus teacher observations`}
+                </p>
+              </>
+            );
+          })()}
 
           {/* Data summary card */}
           <div className="bg-card rounded-2xl shadow-sm border border-gray-100 p-5 mb-5">
@@ -260,11 +305,11 @@ export default function IEPGenerator() {
               <div>
                 <p className="font-bold text-primary text-lg leading-tight">{student.name}</p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className={sldBadgeClass[student.sldType] || 'badge bg-gray-100 text-gray-600'}>
-                    {student.sldType}
+                  <span className={supportAreaBadgeClass[student.primarySupportArea] || 'badge bg-gray-100 text-gray-600'}>
+                    {supportAreaLabel(student.primarySupportArea, language)}
                   </span>
-                  <span className="badge bg-gray-100 text-gray-600 border border-gray-200">
-                    {student.severity}
+                  <span className={tierBadgeClass[student.tier] || 'badge bg-gray-100 text-gray-600'}>
+                    {tierShortLabel(student.tier, language)}
                   </span>
                   <span className="text-xs text-muted">
                     {language === 'HI' ? `कक्षा ${student.class}` : `Class ${student.class}`}
@@ -294,23 +339,45 @@ export default function IEPGenerator() {
               )}
             </div>
 
-            {/* Support areas */}
+            {/* Support areas — derived from the support profile so this can never
+                contradict the tier, the primary support area, or the error patterns below. */}
             <div className="mb-4">
               <p className="text-sm font-semibold text-warm mb-2 flex items-center gap-1.5">
                 <AlertTriangle size={14} />
                 <span>{language === 'HI' ? 'सहायता क्षेत्र' : 'Support Areas'}</span>
               </p>
-              {struggling.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {struggling.map(c => (
-                    <span key={c} className="bg-orange-100 text-orange-700 text-xs font-medium px-3 py-1.5 rounded-xl border border-orange-200">
-                      {c}
-                    </span>
-                  ))}
-                </div>
+              {supportAreas.length > 0 ? (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    {supportAreas.map(a => (
+                      <span key={a.id} className="bg-orange-100 text-orange-700 text-xs font-medium px-3 py-1.5 rounded-xl border border-orange-200">
+                        {supportAreaLabel(a.id, language)}
+                        <span className="text-orange-500 ml-1">
+                          {a.level === 'high'
+                            ? (language === 'HI' ? '· अधिक' : '· higher')
+                            : (language === 'HI' ? '· कुछ' : '· some')}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                  {focusSkills.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="text-xs text-muted mr-1">
+                        {language === 'HI' ? 'विशेष कौशल:' : 'Specific skills:'}
+                      </span>
+                      {focusSkills.map(c => (
+                        <span key={c} className="bg-surface text-muted text-xs px-2 py-1 rounded-lg border border-gray-200">
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </>
               ) : (
-                <p className="text-xs text-muted italic">
-                  {language === 'HI' ? 'कोई संघर्ष नहीं पाया गया' : 'None identified'}
+                <p className="text-xs text-muted">
+                  {language === 'HI'
+                    ? 'कक्षा-स्तरीय सहायता — ताकत बनाए रखें और निगरानी करें (स्तर 1)'
+                    : 'Classroom-level support — monitor and reinforce strengths (Tier 1)'}
                 </p>
               )}
             </div>
@@ -330,6 +397,46 @@ export default function IEPGenerator() {
                 ))}
               </ul>
             </div>
+
+            {/* Teacher observations */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-sm font-semibold text-primary mb-2 flex items-center gap-1.5">
+                <User size={14} className="text-calm" />
+                <span>{language === 'HI' ? 'शिक्षक टिप्पणियाँ' : 'Teacher Observations'}</span>
+              </p>
+              {(student.teacherObservations && student.teacherObservations.length > 0) ? (
+                <ul className="space-y-1.5">
+                  {student.teacherObservations.map((obs, i) => (
+                    <li key={i} className="text-xs text-primary">
+                      <span>{obs.note}</span>
+                      <span className="text-muted"> — {obs.author}, {obs.date}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted italic">
+                  {language === 'HI' ? 'अभी कोई टिप्पणी दर्ज नहीं' : 'No observations recorded yet'}
+                </p>
+              )}
+            </div>
+
+            {/* Specialist notes - only shown if present */}
+            {student.specialistNotes && student.specialistNotes.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-sm font-semibold text-primary mb-2 flex items-center gap-1.5">
+                  <FileText size={14} className="text-calm" />
+                  <span>{language === 'HI' ? 'विशेषज्ञ टिप्पणियाँ' : 'Specialist Notes'}</span>
+                </p>
+                <ul className="space-y-1.5">
+                  {student.specialistNotes.map((note, i) => (
+                    <li key={i} className="text-xs text-primary">
+                      <span>{note.note}</span>
+                      <span className="text-muted"> — {note.author}, {note.date}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           {/* Confirmation question */}
@@ -558,7 +665,7 @@ export default function IEPGenerator() {
               </p>
               <p className="flex items-center gap-2">
                 <FileText size={12} className="flex-shrink-0" />
-                {language === 'HI' ? 'SLD प्रकार:' : 'SLD Type:'} <span className="text-primary font-semibold capitalize">{student.sldType}</span>
+                {language === 'HI' ? 'सहायता क्षेत्र:' : 'Support Area:'} <span className="text-primary font-semibold">{supportAreaLabel(student.primarySupportArea, language)} ({tierShortLabel(student.tier, language)})</span>
               </p>
               <p className="flex items-center gap-2">
                 <FileText size={12} className="flex-shrink-0" />
@@ -607,8 +714,20 @@ function getFallbackIEP(student) {
   reviewDate.setMonth(reviewDate.getMonth() + 3);
   const reviewStr = reviewDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 
+  const areaNames = { reading: 'reading', writing: 'writing', numeracy: 'numeracy', attention: 'attention', memory: 'memory', organisation: 'organisation' };
+  const primaryArea = areaNames[student.primarySupportArea] || 'reading';
+  const tierPhrase = student.tier === 3
+    ? 'specialist referral support'
+    : student.tier === 2
+    ? 'targeted intervention support'
+    : 'classroom support';
+
+  const observationLine = (student.teacherObservations && student.teacherObservations.length > 0)
+    ? ` Teacher observations note: "${student.teacherObservations[student.teacherObservations.length - 1].note}"`
+    : '';
+
   return `## Student Performance Summary
-${student.name} is a Class ${student.class} student at ${student.school} with ${student.severity} ${student.sldType}. They demonstrate enthusiasm and effort during learning activities, and show particular strength in oral comprehension when audio support is provided. Reading fluency and written expression remain primary areas of support.
+${student.name} is a Class ${student.class} student at ${student.school} who may benefit from ${tierPhrase}, primarily in ${primaryArea}. They demonstrate enthusiasm and effort during learning activities, and show particular strength in oral comprehension when audio support is provided.${observationLine}
 
 ## Learning Objectives
 1. ${student.name} will correctly identify and read 40 out of 50 sight words with 80% accuracy within 3 months, using audio-assisted learning tools.

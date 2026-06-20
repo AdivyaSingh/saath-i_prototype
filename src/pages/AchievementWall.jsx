@@ -126,6 +126,32 @@ const AchievementWall = () => {
               </p>
             </div>
           </div>
+
+          {/* Progress summary — points, activities done, streak (from real activity) */}
+          {(() => {
+            const ac = activitiesCompleted || {};
+            const done = (ac.reading || 0) + (ac.maths || 0) + (ac.expression || 0);
+            const points = done * 10 + (appState.focusPoints || 0);
+            const items = [
+              { Icon: Star,  value: points,           label: lang === 'HI' ? 'अंक' : 'Points' },
+              { Icon: Award, value: done,             label: lang === 'HI' ? 'गतिविधियाँ' : 'Activities done' },
+              { Icon: Flame, value: streakDays || 0,  label: lang === 'HI' ? 'दिन की स्ट्रीक' : 'Day streak' },
+            ];
+            return (
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {items.map((it, i) => {
+                  const I = it.Icon;
+                  return (
+                    <div key={i} className="card-elevated p-3 text-center">
+                      <I className="w-5 h-5 text-warm mx-auto mb-1" />
+                      <p className="text-xl font-bold text-primary leading-none">{it.value}</p>
+                      <p className="text-[11px] text-muted mt-1 leading-tight">{it.label}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
         {/* ── Category Tabs ────────────────────────────────── */}

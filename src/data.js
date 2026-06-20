@@ -3,12 +3,12 @@
 
 // ─── COMPANION OPTIONS ───────────────────────────────────────────────────────
 export const COMPANIONS = [
-  { id: 'owl',      emoji: '🦉', name: 'Gyaan',   description: 'Loves words and stories',      sldDefault: 'dyslexia' },
-  { id: 'fox',      emoji: '🦊', name: 'Chiku',   description: 'Quick and clever',              sldDefault: null },
-  { id: 'elephant', emoji: '🐘', name: 'Moti',    description: 'Never forgets anything',        sldDefault: 'dyscalculia' },
-  { id: 'turtle',   emoji: '🐢', name: 'Dheeraj', description: 'Steady and sure always wins',   sldDefault: null },
-  { id: 'lion',     emoji: '🦁', name: 'Bahadur', description: 'Brave and bold',                sldDefault: null },
-  { id: 'parrot',   emoji: '🦜', name: 'Mithu',   description: 'Expressive and creative',       sldDefault: 'dysgraphia' },
+  { id: 'owl',      emoji: '🦉', name: 'Gyaan',   description: 'Loves words and stories',      supportAreaDefault: 'reading' },
+  { id: 'fox',      emoji: '🦊', name: 'Chiku',   description: 'Quick and clever',              supportAreaDefault: null },
+  { id: 'elephant', emoji: '🐘', name: 'Moti',    description: 'Never forgets anything',        supportAreaDefault: 'numeracy' },
+  { id: 'turtle',   emoji: '🐢', name: 'Dheeraj', description: 'Steady and sure always wins',   supportAreaDefault: null },
+  { id: 'lion',     emoji: '🦁', name: 'Bahadur', description: 'Brave and bold',                supportAreaDefault: null },
+  { id: 'parrot',   emoji: '🦜', name: 'Mithu',   description: 'Expressive and creative',       supportAreaDefault: 'writing' },
 ];
 
 // ─── SCREENING DATA ───────────────────────────────────────────────────────────
@@ -54,6 +54,26 @@ export const SCREENING_TRACE_PATHS = [
   },
 ];
 
+// ─── SUPPORT AREAS (replaces diagnostic SLD typing) ──────────────────────────
+// Principle: no diagnosis, only support needs. A student's profile is expressed
+// as levels of need across support areas, never as a named condition.
+// Levels: 'low' | 'some' | 'high' — how much support a student may benefit from in that area.
+export const SUPPORT_AREAS = [
+  { id: 'reading',      labelEN: 'Reading Support',      labelHI: 'पठन सहायता' },
+  { id: 'writing',      labelEN: 'Writing Support',      labelHI: 'लेखन सहायता' },
+  { id: 'numeracy',     labelEN: 'Numeracy Support',     labelHI: 'संख्या सहायता' },
+  { id: 'attention',    labelEN: 'Attention Support',    labelHI: 'ध्यान सहायता' },
+  { id: 'memory',       labelEN: 'Memory Support',       labelHI: 'स्मृति सहायता' },
+  { id: 'organisation', labelEN: 'Organisation Support', labelHI: 'व्यवस्था सहायता' },
+];
+
+// Tier framework: classroom support → targeted intervention → specialist referral.
+export const TIER_LABELS = {
+  1: { EN: 'Tier 1 — Classroom Support',      HI: 'स्तर 1 — कक्षा सहायता' },
+  2: { EN: 'Tier 2 — Targeted Intervention',  HI: 'स्तर 2 — लक्षित हस्तक्षेप' },
+  3: { EN: 'Tier 3 — Specialist Referral',    HI: 'स्तर 3 — विशेषज्ञ रेफरल' },
+};
+
 // ─── DEMO STUDENT DATA ────────────────────────────────────────────────────────
 export const DEMO_STUDENTS = [
   {
@@ -61,8 +81,9 @@ export const DEMO_STUDENTS = [
     name: 'Arjun',
     class: 4,
     school: 'Team: CaseLyticals Demo School, Rajasthan',
-    sldType: 'dyslexia',
-    severity: 'moderate',
+    supportProfile: { reading: 'high', writing: 'some', numeracy: 'low', attention: 'low', memory: 'some', organisation: 'low' },
+    primarySupportArea: 'reading',
+    tier: 2,
     language: 'HI',
     lastActive: '2 hours ago',
     streakDays: 4,
@@ -84,14 +105,20 @@ export const DEMO_STUDENTS = [
     weeklyStats: { timeSpent: '1h 23m', activitiesCompleted: 7, helpRequests: 3 },
     aiSuggestion: "Arjun responds better to oral assessments. His comprehension scores are strong when audio support is on — consider oral examination instead of written this week.",
     progressHistory: [62, 58, 55, 48],
+    teacherObservations: [
+      { date: '2026-05-28', author: 'Ms. Lata', note: 'Reads aloud confidently when given audio support first. Still mixes up b/d in unfamiliar words.' },
+      { date: '2026-06-10', author: 'Ms. Lata', note: 'Volunteered to read in class for the first time this term — good sign of growing confidence.' },
+    ],
+    specialistNotes: [],
   },
   {
     id: 'student_002',
     name: 'Priya',
     class: 6,
     school: 'Team: CaseLyticals Demo School, Pune, Maharashtra',
-    sldType: 'dyscalculia',
-    severity: 'mild-moderate',
+    supportProfile: { reading: 'low', writing: 'low', numeracy: 'high', attention: 'some', memory: 'low', organisation: 'some' },
+    primarySupportArea: 'numeracy',
+    tier: 2,
     language: 'EN',
     lastActive: '1 day ago',
     streakDays: 2,
@@ -112,14 +139,19 @@ export const DEMO_STUDENTS = [
     weeklyStats: { timeSpent: '45m', activitiesCompleted: 4, helpRequests: 5 },
     aiSuggestion: "Priya struggles when abstract symbols appear before the visual model. Always show object-based counting before symbolic notation in her activities.",
     progressHistory: [45, 50, 48, 52],
+    teacherObservations: [
+      { date: '2026-06-02', author: 'Mr. Deshpande', note: 'Counts confidently with physical objects but freezes when the same problem is written as digits.' },
+    ],
+    specialistNotes: [],
   },
   {
     id: 'student_003',
     name: 'Rohit',
     class: 5,
     school: 'Team: CaseLyticals Demo School, UP',
-    sldType: 'dyslexia',
-    severity: 'mild',
+    supportProfile: { reading: 'some', writing: 'low', numeracy: 'low', attention: 'low', memory: 'low', organisation: 'low' },
+    primarySupportArea: 'reading',
+    tier: 1,
     language: 'HI',
     lastActive: '8 days ago',
     streakDays: 0,
@@ -140,6 +172,10 @@ export const DEMO_STUDENTS = [
     weeklyStats: { timeSpent: '0m', activitiesCompleted: 0, helpRequests: 0 },
     aiSuggestion: "Rohit has been inactive for 8 days. A brief personal encouragement often re-engages students. His last session showed good progress in sight words.",
     progressHistory: [55, 52, 50, 48],
+    teacherObservations: [
+      { date: '2026-05-20', author: 'Ms. Lata', note: 'Engaged and improving before the gap in activity. Worth a quick personal check-in to re-engage him.' },
+    ],
+    specialistNotes: [],
   },
 ];
 
@@ -359,53 +395,53 @@ export const ACHIEVEMENTS = [
 export const RESOURCES = [
   {
     id: 'res_001',
-    title: 'Dyslexia Classroom Checklist',
-    sldType: 'dyslexia',
+    title: 'Reading Support Classroom Checklist',
+    supportArea: 'reading',
     classLevel: 'All',
     type: 'Accommodation Guide',
-    description: 'Step-by-step classroom accommodation checklist for teachers supporting dyslexic students.',
+    description: 'Step-by-step classroom accommodation checklist for teachers supporting students who benefit from reading support.',
     rating: 4,
-    preview: `DYSLEXIA CLASSROOM ACCOMMODATION CHECKLIST\n\nSeating: Place the student near the front, away from distractions.\nFont: Use OpenDyslexic or Arial 14pt+ in all printed materials.\nAssessment: Offer oral examination as an alternative to written tests.\nTime: Provide 1.5x extended time on all timed tasks.\nReading: Allow use of a finger or ruler as a line guide.\nNote-taking: Provide printed notes rather than requiring board copying.\nEncouragement: Acknowledge effort verbally every session.`,
+    preview: `READING SUPPORT CLASSROOM CHECKLIST\n\nSeating: Place the student near the front, away from distractions.\nFont: Use OpenDyslexic or Arial 14pt+ in all printed materials.\nAssessment: Offer oral examination as an alternative to written tests.\nTime: Provide 1.5x extended time on all timed tasks.\nReading: Allow use of a finger or ruler as a line guide.\nNote-taking: Provide printed notes rather than requiring board copying.\nEncouragement: Acknowledge effort verbally every session.`,
   },
   {
     id: 'res_002',
     title: 'Object-Based Maths Lesson Plan',
-    sldType: 'dyscalculia',
+    supportArea: 'numeracy',
     classLevel: '3–6',
     type: 'Lesson Plan',
-    description: 'Step-by-step lesson plan for teaching addition and subtraction using physical objects before symbols.',
+    description: 'Step-by-step lesson plan for teaching addition and subtraction using physical objects before symbols, for students who benefit from numeracy support.',
     rating: 5,
     preview: `OBJECT-BASED MATHS LESSON — CLASS 3-6\n\nLesson Goal: Teach 2-digit addition using physical grouping.\n\nStep 1: Use 10-20 physical counters (bottle caps, stones, or beans).\nStep 2: Ask student to group counters into two piles (e.g. 6 and 8).\nStep 3: Student physically counts total by moving each counter to a new pile.\nStep 4: Only after counting is complete, write the equation on paper: 6 + 8 = 14.\nStep 5: Repeat with different values. NEVER introduce symbols first.\n\nKey rule: Equation notation always follows physical experience. Never precedes it.`,
   },
   {
     id: 'res_003',
-    title: 'Parent Communication Template — Dyslexia',
-    sldType: 'dyslexia',
+    title: 'Parent Communication Template — Reading Support',
+    supportArea: 'reading',
     classLevel: 'All',
     type: 'Parent Template',
-    description: 'Plain-language letter to help teachers communicate an SLD finding to parents respectfully.',
+    description: 'Plain-language letter to help teachers communicate a reading support need to parents respectfully.',
     rating: 4,
     preview: `Dear Parent/Guardian,\n\nI am writing to share some observations about your child's learning that I believe will be helpful.\n\nYour child is a hardworking and enthusiastic student. I have noticed that they sometimes find reading and writing activities more challenging than other areas — this is not uncommon, and it does not reflect their intelligence or effort at all.\n\nI would like to discuss some learning support strategies that have helped many children. These are simple adjustments to how we present information that can make a significant difference.\n\nPlease feel free to contact me at your convenience. I look forward to working together for your child's success.\n\nWarm regards,\n[Teacher Name]`,
   },
   {
     id: 'res_004',
     title: 'Expression Studio Prompt Cards',
-    sldType: 'dysgraphia',
+    supportArea: 'writing',
     classLevel: '3–8',
     type: 'Activity Resource',
-    description: 'Illustrated prompt cards for dysgraphic students to use voice or drawing instead of writing.',
+    description: 'Illustrated prompt cards for students who benefit from writing support to use voice or drawing instead of writing.',
     rating: 5,
     preview: `EXPRESSION STUDIO PROMPT CARDS\n\nHow to use: Show the student the illustrated prompt. Let them choose how to respond: speak their answer aloud, draw it, or arrange word tiles.\n\nPrompt 1: "Meera found a magical door in the forest. What was behind it?"\nPrompt 2: "The elephant ran away from the river. Why was it scared?"\nPrompt 3: "One night, a star fell into Raju's garden. What happened next?"\nPrompt 4: "On the last day of school, everyone got a surprise. What was it?"\n\nReminder: There is no wrong answer. Celebrate every response.`,
   },
   {
     id: 'res_005',
-    title: 'Dysgraphia Writing Alternatives Guide',
-    sldType: 'dysgraphia',
+    title: 'Writing Support Alternatives Guide',
+    supportArea: 'writing',
     classLevel: 'All',
     type: 'Accommodation Guide',
-    description: 'Practical guide for providing writing alternatives to students with dysgraphia.',
+    description: 'Practical guide for providing writing alternatives to students who benefit from writing support.',
     rating: 4,
-    preview: `WRITING ALTERNATIVES FOR DYSGRAPHIA\n\nPrinciple: The goal is expression, not handwriting.\n\n1. Voice recording: Let students record verbal answers instead of writing.\n2. Word processors: Allow typing instead of handwriting where possible.\n3. Graphic organizers: Use visual maps instead of written outlines.\n4. Word tiles: Pre-printed word cards that students arrange into sentences.\n5. Drawing as response: Accept illustrated answers for comprehension tasks.\n6. Scribe support: Allow a peer or aide to write what the student dictates.\n\nKey: Always evaluate content quality, not handwriting neatness.`,
+    preview: `WRITING ALTERNATIVES — SUPPORT GUIDE\n\nPrinciple: The goal is expression, not handwriting.\n\n1. Voice recording: Let students record verbal answers instead of writing.\n2. Word processors: Allow typing instead of handwriting where possible.\n3. Graphic organizers: Use visual maps instead of written outlines.\n4. Word tiles: Pre-printed word cards that students arrange into sentences.\n5. Drawing as response: Accept illustrated answers for comprehension tasks.\n6. Scribe support: Allow a peer or aide to write what the student dictates.\n\nKey: Always evaluate content quality, not handwriting neatness.`,
   },
 ];
 
@@ -444,6 +480,8 @@ export const STRINGS = {
     resourceLibrary: 'Resource Library',
     demoModeLabel: 'Demo Mode',
     screeningComplete: 'Learning profile created',
+    supportNeed: 'Support need',
+    needsMoreData: 'Needs more data',
   },
   HI: {
     appName: 'साथी',
@@ -477,5 +515,7 @@ export const STRINGS = {
     resourceLibrary: 'संसाधन पुस्तकालय',
     demoModeLabel: 'डेमो मोड',
     screeningComplete: 'लर्निंग प्रोफ़ाइल बन गई',
+    supportNeed: 'सहायता आवश्यकता',
+    needsMoreData: 'अधिक डेटा चाहिए',
   },
 };

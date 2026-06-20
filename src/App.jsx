@@ -17,8 +17,10 @@ import NumberWorld     from './pages/NumberWorld';
 import ExpressionStudio from './pages/ExpressionStudio';
 import AchievementWall from './pages/AchievementWall';
 import FocusZone       from './pages/FocusZone';
+import CatchUpCourses  from './pages/CatchUpCourses';
 import TeacherDashboard from './pages/TeacherDashboard';
 import IEPGenerator    from './pages/IEPGenerator';
+import ProgressAnalytics from './pages/ProgressAnalytics';
 import ResourceLibrary from './pages/ResourceLibrary';
 import TeacherAssistant from './pages/TeacherAssistant';
 
@@ -133,12 +135,14 @@ export default function App() {
           <Route path="/expression-studio" element={<ExpressionStudio />} />
           <Route path="/achievements"      element={<AchievementWall />} />
           <Route path="/focus-zone"        element={<FocusZone />} />
+          <Route path="/catch-up"          element={<CatchUpCourses />} />
 
           {/* Teacher journey */}
           <Route path="/teacher"           element={<TeacherDashboard />} />
           <Route path="/teacher/iep/:id"   element={<IEPGenerator />} />
           <Route path="/teacher/resources" element={<ResourceLibrary />} />
           <Route path="/teacher/assistant" element={<TeacherAssistant />} />
+          <Route path="/teacher/analytics" element={<ProgressAnalytics />} />
 
           {/* 404 catch-all */}
           <Route path="*" element={<NotFound />} />

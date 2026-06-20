@@ -67,13 +67,21 @@
   .status-dot-yellow { @apply bg-amber-400; }
   .status-dot-red { @apply bg-red-500; }
 
-  /* SLD type badges */
+  /* Support-area badges (support-based language — never diagnostic) */
   .badge {
     @apply text-xs font-medium px-2.5 py-1 rounded-full inline-flex items-center gap-1;
   }
-  .badge-dyslexia { @apply bg-blue-50 text-blue-700 border border-blue-200; }
-  .badge-dyscalculia { @apply bg-purple-50 text-purple-700 border border-purple-200; }
-  .badge-dysgraphia { @apply bg-orange-50 text-orange-700 border border-orange-200; }
+  .badge-reading      { @apply bg-blue-50 text-blue-700 border border-blue-200; }
+  .badge-numeracy     { @apply bg-purple-50 text-purple-700 border border-purple-200; }
+  .badge-writing      { @apply bg-orange-50 text-orange-700 border border-orange-200; }
+  .badge-attention    { @apply bg-teal-50 text-teal-700 border border-teal-200; }
+  .badge-memory       { @apply bg-indigo-50 text-indigo-700 border border-indigo-200; }
+  .badge-organisation { @apply bg-amber-50 text-amber-700 border border-amber-200; }
+
+  /* Tier badges (Tier 1 classroom / Tier 2 targeted / Tier 3 specialist) */
+  .badge-tier-1 { @apply bg-green-50 text-green-700 border border-green-200; }
+  .badge-tier-2 { @apply bg-yellow-50 text-yellow-700 border border-yellow-200; }
+  .badge-tier-3 { @apply bg-red-50 text-red-700 border border-red-200; }
 
   /* Companion container */
   .companion-container {

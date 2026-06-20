@@ -10,15 +10,13 @@ import {
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../App';
-import { RESOURCES, STRINGS } from '../data';
+import { RESOURCES, STRINGS, SUPPORT_AREAS } from '../data';
 
 // ─── FILTER CONFIG ────────────────────────────────────────────────────────────
 
-const SLD_FILTERS = [
-  { id: 'all',         labelEN: 'All',          labelHI: 'सभी' },
-  { id: 'dyslexia',    labelEN: 'Dyslexia',     labelHI: 'डिस्लेक्सिया' },
-  { id: 'dyscalculia', labelEN: 'Dyscalculia',  labelHI: 'डिस्कैल्कुलिया' },
-  { id: 'dysgraphia',  labelEN: 'Dysgraphia',   labelHI: 'डिस्ग्राफिया' },
+const SUPPORT_AREA_FILTERS = [
+  { id: 'all', labelEN: 'All', labelHI: 'सभी' },
+  ...SUPPORT_AREAS.map(a => ({ id: a.id, labelEN: a.labelEN, labelHI: a.labelHI })),
 ];
 
 const TYPE_FILTERS = [
@@ -29,11 +27,20 @@ const TYPE_FILTERS = [
   { id: 'Activity Resource',    labelEN: 'Activities',     labelHI: 'गतिविधियाँ' },
 ];
 
-// SLD badge CSS classes from index.css
-const sldBadgeClass = {
-  dyslexia:    'badge badge-dyslexia',
-  dyscalculia: 'badge badge-dyscalculia',
-  dysgraphia:  'badge badge-dysgraphia',
+// Support-area badge CSS classes from index.css
+const supportAreaBadgeClass = {
+  reading:      'badge badge-reading',
+  writing:      'badge badge-writing',
+  numeracy:     'badge badge-numeracy',
+  attention:    'badge badge-attention',
+  memory:       'badge badge-memory',
+  organisation: 'badge badge-organisation',
+};
+
+const supportAreaLabel = (areaId, language) => {
+  const area = SUPPORT_AREAS.find(a => a.id === areaId);
+  if (!area) return areaId || '';
+  return language === 'HI' ? area.labelHI : area.labelEN;
 };
 
 // Resource type → Lucide icon mapping
@@ -68,7 +75,7 @@ export default function ResourceLibrary() {
   const { appState, updateState } = useApp();
   const { language } = appState;
 
-  const [sldFilter, setSldFilter]   = useState('all');
+  const [supportAreaFilter, setSupportAreaFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [previewResource, setPreviewResource] = useState(null);
   const [toastMsg, setToastMsg]     = useState('');
@@ -122,9 +129,9 @@ export default function ResourceLibrary() {
 
   // ── Filter resources ──────────────────────────────────────────────────────
   const filtered = RESOURCES.filter(r => {
-    const sldOk  = sldFilter  === 'all' || r.sldType === sldFilter;
+    const supportAreaOk = supportAreaFilter === 'all' || r.supportArea === supportAreaFilter;
     const typeOk = typeFilter === 'all' || r.type === typeFilter;
-    return sldOk && typeOk;
+    return supportAreaOk && typeOk;
   });
 
   // Count of saved resources (simulated)
@@ -163,23 +170,23 @@ export default function ResourceLibrary() {
       {/* ── Subtitle ───────────────────────────────────────────────────────── */}
       <p className="text-sm text-muted mb-5">
         {language === 'HI'
-          ? 'SLD छात्रों के लिए पाठ योजनाएं, गाइड और टेम्पलेट'
-          : 'Lesson plans, guides and templates for SLD students'}
+          ? 'सहायता आवश्यकता वाले छात्रों के लिए पाठ योजनाएं, गाइड और टेम्पलेट'
+          : 'Lesson plans, guides and templates for students who benefit from learning support'}
       </p>
 
-      {/* ── Filter bar: SLD Type ───────────────────────────────────────────── */}
+      {/* ── Filter bar: Support Area ───────────────────────────────────────── */}
       <div className="mb-3">
         <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">
-          {language === 'HI' ? 'SLD प्रकार' : 'SLD Type'}
+          {language === 'HI' ? 'सहायता क्षेत्र' : 'Support Area'}
         </p>
         <div className="flex flex-wrap gap-2">
-          {SLD_FILTERS.map(f => (
+          {SUPPORT_AREA_FILTERS.map(f => (
             <button
               key={f.id}
-              onClick={() => setSldFilter(f.id)}
+              onClick={() => setSupportAreaFilter(f.id)}
               aria-label={`Filter by ${f.labelEN}`}
               className={`px-3 py-1.5 rounded-xl text-sm font-semibold min-h-[40px] border-2 transition-all duration-200 ${
-                sldFilter === f.id
+                supportAreaFilter === f.id
                   ? 'bg-calm text-white border-calm'
                   : 'bg-card text-muted border-gray-200 hover:border-calm hover:text-calm'
               }`}
@@ -230,7 +237,7 @@ export default function ResourceLibrary() {
               : 'No resources match this filter.'}
           </p>
           <button
-            onClick={() => { setSldFilter('all'); setTypeFilter('all'); }}
+            onClick={() => { setSupportAreaFilter('all'); setTypeFilter('all'); }}
             aria-label="Clear filters"
             className="mt-3 text-calm text-sm font-semibold hover:underline min-h-[48px]"
           >
@@ -257,8 +264,8 @@ export default function ResourceLibrary() {
                     </h2>
                     {/* Metadata badges */}
                     <div className="flex flex-wrap gap-1.5">
-                      <span className={sldBadgeClass[resource.sldType] || 'badge bg-gray-100 text-gray-600'}>
-                        {resource.sldType}
+                      <span className={supportAreaBadgeClass[resource.supportArea] || 'badge bg-gray-100 text-gray-600'}>
+                        {supportAreaLabel(resource.supportArea, language)}
                       </span>
                       <span className="badge bg-gray-100 text-gray-600 border border-gray-200">
                         {language === 'HI' ? `कक्षा ${resource.classLevel}` : `Class ${resource.classLevel}`}
@@ -363,8 +370,8 @@ export default function ResourceLibrary() {
                   <h2 className="text-base font-bold text-primary leading-snug">
                     {previewResource.title}
                   </h2>
-                  <span className={`mt-1 inline-block ${sldBadgeClass[previewResource.sldType] || 'badge'}`}>
-                    {previewResource.sldType}
+                  <span className={`mt-1 inline-block ${supportAreaBadgeClass[previewResource.supportArea] || 'badge'}`}>
+                    {supportAreaLabel(previewResource.supportArea, language)}
                   </span>
                 </div>
               </div>

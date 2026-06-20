@@ -355,6 +355,36 @@ const deriveProfile = (rhymeData, pileData, traceData, isDemoMode) => {
   return { ...scores, detectedType };
 };
 
+// ─── Support-profile mapping (additive — does not change scoring above) ──────
+// Converts the existing dyslexia/dyscalculia/dysgraphia scores into the
+// support-based shape the teacher dashboard and IEP generator expect:
+// supportProfile (per area: low/some/high), primarySupportArea, tier (1-3).
+// This keeps deriveProfile()'s scoring untouched — it only relabels the output
+// for storage, the same way the rest of the app already treats these scores
+// as support signals rather than diagnoses.
+const scoreToLevel = (score) => (score > 0.6 ? 'high' : score > TYPICAL_THRESHOLD ? 'some' : 'low');
+
+const toSupportProfile = (result) => {
+  const supportProfile = {
+    reading: scoreToLevel(result.dyslexiaScore),
+    writing: scoreToLevel(result.dysgraphiaScore),
+    numeracy: scoreToLevel(result.dyscalculiaScore),
+    // Not measured by the current three screening tasks — default to 'low' until
+    // Focus Zone / attention & memory tasks are added (priority 2).
+    attention: 'low',
+    memory: 'low',
+    organisation: 'low',
+  };
+
+  const areaForType = { dyslexia: 'reading', dysgraphia: 'writing', dyscalculia: 'numeracy' };
+  const primarySupportArea = areaForType[result.detectedType] || 'reading';
+
+  const maxScore = Math.max(result.dyslexiaScore, result.dyscalculiaScore, result.dysgraphiaScore);
+  const tier = result.detectedType === 'typical' ? 1 : maxScore > 0.6 ? 3 : 2;
+
+  return { supportProfile, primarySupportArea, tier };
+};
+
 // Child-friendly profile descriptions (no clinical labels)
 const PROFILE_MESSAGES = {
   dyslexia: {
@@ -744,8 +774,10 @@ export default function Screening() {
       };
 
       // Store in app state with telemetry
+      const supportMapping = toSupportProfile(result);
       updateState({
         sldType: result.detectedType,
+        ...supportMapping,
         screeningResults: {
           dyslexiaScore: Math.round(result.dyslexiaScore * 100) / 100,
           dyscalculiaScore: Math.round(result.dyscalculiaScore * 100) / 100,
@@ -772,6 +804,7 @@ export default function Screening() {
             school: 'Saath-i App User',
             sldType: result.detectedType,
             severity: maxScore > 0.6 ? 'moderate' : 'mild',
+            ...toSupportProfile(result),
             language: appState.language,
             lastActive: 'Just now',
             streakDays: 1,
@@ -787,6 +820,8 @@ export default function Screening() {
             weeklyStats: { timeSpent: '0m', activitiesCompleted: 0, helpRequests: 0 },
             aiSuggestion: '',
             progressHistory: [0],
+            teacherObservations: [],
+            specialistNotes: [],
             screeningResults: {
               dyslexiaScore: Math.round(result.dyslexiaScore * 100) / 100,
               dyscalculiaScore: Math.round(result.dyscalculiaScore * 100) / 100,

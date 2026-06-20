@@ -71,6 +71,17 @@ const buildActivities = (lang, S) => [
     iconColor: 'text-success',
     route: '/expression-studio',
   },
+  {
+    id: 'catchup',
+    icon: Sparkles,
+    title: lang === 'HI' ? 'कैच-अप कोर्स' : 'Catch-Up Courses',
+    subtitle: lang === 'HI' ? 'अपनी गति से सीखो, कदम दर कदम' : 'Build your skills, step by step',
+    duration: lang === 'HI' ? '~10 मिनट' : '~10 min',
+    borderColor: 'border-accent',
+    iconBg: 'bg-accent/10',
+    iconColor: 'text-accent',
+    route: '/catch-up',
+  },
 ];
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────

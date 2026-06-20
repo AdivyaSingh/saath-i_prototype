@@ -15,16 +15,39 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import Layout from '../components/Layout';
 import { useApp } from '../App';
-import { DEMO_STUDENTS, STRINGS } from '../data';
+import { DEMO_STUDENTS, STRINGS, SUPPORT_AREAS, TIER_LABELS } from '../data';
 import { subscribeToStudents, verifyTeacherPin, createTeacher, generateClassCode } from '../firebase';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-// Maps SLD type → CSS badge class defined in index.css
-const sldBadgeClass = {
-  dyslexia:    'badge badge-dyslexia',
-  dyscalculia: 'badge badge-dyscalculia',
-  dysgraphia:  'badge badge-dysgraphia',
+// Maps support area → CSS badge class defined in index.css
+const supportAreaBadgeClass = {
+  reading:      'badge badge-reading',
+  writing:      'badge badge-writing',
+  numeracy:     'badge badge-numeracy',
+  attention:    'badge badge-attention',
+  memory:       'badge badge-memory',
+  organisation: 'badge badge-organisation',
+};
+
+// Maps tier (1/2/3) → CSS badge class defined in index.css
+const tierBadgeClass = {
+  1: 'badge badge-tier-1',
+  2: 'badge badge-tier-2',
+  3: 'badge badge-tier-3',
+};
+
+// Human-readable label for a student's primary support area
+const supportAreaLabel = (areaId, language) => {
+  const area = SUPPORT_AREAS.find(a => a.id === areaId);
+  if (!area) return language === 'HI' ? 'सहायता चाहिए' : 'Support needed';
+  return language === 'HI' ? area.labelHI : area.labelEN;
+};
+
+// Short tier label, e.g. "Tier 2" / "स्तर 2"
+const tierShortLabel = (tier, language) => {
+  const n = tier || 1;
+  return language === 'HI' ? `स्तर ${n}` : `Tier ${n}`;
 };
 
 // Maps status → CSS status-dot class defined in index.css
@@ -61,7 +84,7 @@ const FILTER_TABS = [
   { id: 'all',       labelEN: 'All',              labelHI: 'सभी' },
   { id: 'attention', labelEN: 'Needs Attention',   labelHI: 'ध्यान चाहिए' },
   { id: 'active',    labelEN: 'Active',            labelHI: 'सक्रिय' },
-  { id: 'sld',       labelEN: 'By SLD Type',       labelHI: 'SLD प्रकार' },
+  { id: 'tier',      labelEN: 'By Tier',           labelHI: 'स्तर अनुसार' },
 ];
 
 // ─── DYNAMIC STATS DERIVED FROM DATA ──────────────────────────────────────────
@@ -233,7 +256,7 @@ export default function TeacherDashboard() {
 
   // ── Dashboard local state ─────────────────────────────────────────────────
   const [activeTab,       setActiveTab]       = useState('all');
-  const [sldSubFilter,    setSldSubFilter]    = useState('all');
+  const [tierSubFilter,   setTierSubFilter]   = useState('all');
   const [sortBy,          setSortBy]          = useState('status');
   const [activeStudentId, setActiveStudentId] = useState(null);
 
@@ -269,7 +292,7 @@ export default function TeacherDashboard() {
     .filter(s => {
       if (activeTab === 'attention') return s.status === 'red' || s.status === 'yellow';
       if (activeTab === 'active')    return s.status === 'green';
-      if (activeTab === 'sld')       return sldSubFilter === 'all' || s.sldType === sldSubFilter;
+      if (activeTab === 'tier')      return tierSubFilter === 'all' || String(s.tier || 1) === tierSubFilter;
       return true;
     })
     .sort((a, b) => {
@@ -607,6 +630,15 @@ export default function TeacherDashboard() {
             <Bot size={14} />
             <span className="hidden sm:inline">{language === 'HI' ? 'AI सहायक' : 'AI Assistant'}</span>
           </button>
+          {/* Progress Analytics */}
+          <button
+            onClick={() => navigate('/teacher/analytics')}
+            aria-label="Progress Analytics"
+            className="flex items-center gap-1.5 text-sm text-accent border border-accent/30 px-3 py-1 rounded-lg min-h-[48px] hover:bg-accent/10 transition-colors font-semibold"
+          >
+            <BarChart3 size={14} />
+            <span className="hidden sm:inline">{language === 'HI' ? 'विश्लेषण' : 'Analytics'}</span>
+          </button>
           {/* Resource Library */}
           <button
             onClick={() => navigate('/teacher/resources')}
@@ -681,22 +713,22 @@ export default function TeacherDashboard() {
           </div>
         </div>
 
-        {/* ── SLD sub-filter (only when tab = 'sld') ─────────────────────── */}
-        {activeTab === 'sld' && (
+        {/* ── Tier sub-filter (only when tab = 'tier') ───────────────────── */}
+        {activeTab === 'tier' && (
           <div className="flex gap-2 mb-4 animate-fadeIn">
-            {['all', 'dyslexia', 'dyscalculia', 'dysgraphia'].map(type => (
+            {['all', '1', '2', '3'].map(t => (
               <motion.button
-                key={type}
-                onClick={() => setSldSubFilter(type)}
+                key={t}
+                onClick={() => setTierSubFilter(t)}
                 whileTap={{ scale: 0.97 }}
-                aria-label={`Filter by ${type}`}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold min-h-[40px] border-2 transition-all capitalize ${
-                  sldSubFilter === type
+                aria-label={`Filter by Tier ${t}`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold min-h-[40px] border-2 transition-all ${
+                  tierSubFilter === t
                     ? 'bg-calm text-white border-calm'
                     : 'bg-card text-muted border-gray-200 hover:border-calm'
                 }`}
               >
-                {type === 'all' ? (language === 'HI' ? 'सभी' : 'All') : type}
+                {t === 'all' ? (language === 'HI' ? 'सभी' : 'All') : tierShortLabel(Number(t), language)}
               </motion.button>
             ))}
           </div>
@@ -711,14 +743,17 @@ export default function TeacherDashboard() {
               transition={{ duration: 0.2 }}
               className="bg-card rounded-2xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow duration-200"
             >
-              {/* Card header: status dot + SLD badge */}
-              <div className="flex items-center gap-2 mb-2">
+              {/* Card header: status dot + support area badge + tier badge */}
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <span
                   className={statusDotClass[student.status] || 'status-dot bg-gray-400'}
                   aria-label={`Status: ${student.status}`}
                 />
-                <span className={sldBadgeClass[student.sldType] || 'badge bg-gray-100 text-gray-600'}>
-                  {student.sldType}
+                <span className={supportAreaBadgeClass[student.primarySupportArea] || 'badge bg-gray-100 text-gray-600'}>
+                  {supportAreaLabel(student.primarySupportArea, language)}
+                </span>
+                <span className={tierBadgeClass[student.tier] || 'badge bg-gray-100 text-gray-600'}>
+                  {tierShortLabel(student.tier, language)}
                 </span>
                 <span className="ml-auto text-xs text-muted font-medium">
                   {language === 'HI' ? `कक्षा ${student.class}` : `Class ${student.class}`}
@@ -795,7 +830,7 @@ export default function TeacherDashboard() {
               {language === 'HI' ? 'इस फ़िल्टर के लिए कोई छात्र नहीं मिला।' : 'No students match this filter.'}
             </p>
             <button
-              onClick={() => { setActiveTab('all'); setSldSubFilter('all'); }}
+              onClick={() => { setActiveTab('all'); setTierSubFilter('all'); }}
               className="mt-3 text-calm text-sm font-semibold hover:underline min-h-[48px]"
               aria-label="Clear filters"
             >
@@ -863,11 +898,11 @@ export default function TeacherDashboard() {
               <div>
                 <h2 className="text-2xl font-bold text-primary">{activeStudent.name}</h2>
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                  <span className={sldBadgeClass[activeStudent.sldType] || 'badge'}>
-                    {activeStudent.sldType}
+                  <span className={supportAreaBadgeClass[activeStudent.primarySupportArea] || 'badge'}>
+                    {supportAreaLabel(activeStudent.primarySupportArea, language)}
                   </span>
-                  <span className="badge bg-gray-100 text-gray-600 border border-gray-200">
-                    {activeStudent.severity}
+                  <span className={tierBadgeClass[activeStudent.tier] || 'badge'}>
+                    {tierShortLabel(activeStudent.tier, language)}
                   </span>
                   <span className="text-xs text-muted">
                     {language === 'HI' ? `कक्षा ${activeStudent.class}` : `Class ${activeStudent.class}`}
@@ -1078,6 +1113,27 @@ export default function TeacherDashboard() {
                   {(!activeStudent.errorPatterns || activeStudent.errorPatterns.length === 0) && (
                     <p className="text-xs text-muted italic">
                       {language === 'HI' ? 'अभी कोई त्रुटि पैटर्न नहीं' : 'No error patterns recorded yet'}
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              {/* ── Section 3b: Teacher Observations (feeds the IEP) ──── */}
+              <section>
+                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <User size={14} className="text-calm" />
+                  {language === 'HI' ? 'शिक्षक टिप्पणियाँ' : 'Teacher Observations'}
+                </h3>
+                <div className="space-y-2">
+                  {(activeStudent.teacherObservations || []).map((obs, i) => (
+                    <div key={i} className="bg-surface rounded-xl p-3 border border-gray-100">
+                      <p className="text-sm text-primary leading-snug">{obs.note}</p>
+                      <p className="text-xs text-muted mt-1">{obs.author} · {obs.date}</p>
+                    </div>
+                  ))}
+                  {(!activeStudent.teacherObservations || activeStudent.teacherObservations.length === 0) && (
+                    <p className="text-xs text-muted italic">
+                      {language === 'HI' ? 'अभी कोई टिप्पणी दर्ज नहीं' : 'No observations recorded yet'}
                     </p>
                   )}
                 </div>
