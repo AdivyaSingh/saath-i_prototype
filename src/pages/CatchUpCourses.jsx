@@ -1559,18 +1559,6 @@ const TRACKS = [
     levels: NUMERACY_LEVELS,
     sldTypes: ['dyscalculia'],
   },
-  {
-    id: 'writing',
-    icon: PenLine,
-    label: 'Writing Support',
-    labelHI: 'लेखन सहायता',
-    color: 'text-success',
-    bg: 'bg-success/10',
-    border: 'border-success',
-    btnClass: 'bg-success hover:bg-green-700',
-    levels: WRITING_LEVELS,
-    sldTypes: ['dysgraphia'],
-  },
 ];
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
@@ -1583,10 +1571,11 @@ export default function CatchUpCourses() {
 
   // Detect recommended track from screeningResults or sldType
   const getRecommendedTrack = () => {
-    const sld = appState.sldType || '';
-    if (sld.includes('dyscalculia')) return 'numeracy';
-    if (sld.includes('dysgraphia')) return 'writing';
-    return 'reading'; // default / dyslexia
+    const area = appState.primarySupportArea || '';
+    if (area === 'numeracy') return 'numeracy';
+    // Writing / fine-motor needs are handled hands-on by the teacher, not in the app,
+    // so there is no on-app writing track to recommend.
+    return 'reading';
   };
 
   // ── Persistent catch-up progress in appState ─────────────────────────────

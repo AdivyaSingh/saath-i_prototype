@@ -74,6 +74,66 @@ export const TIER_LABELS = {
   3: { EN: 'Tier 3 — Specialist Referral',    HI: 'स्तर 3 — विशेषज्ञ रेफरल' },
 };
 
+// ─── PRIORITY 6: SPECIAL EDUCATOR REFERRAL WORKFLOW ──────────────────────────
+// Referral fields live directly on the student record (reuses existing
+// student docs — no new Firestore collection). Defaults below are additive;
+// every field is optional and every page that reads them falls back gracefully
+// if a student doc was created before this feature existed.
+//
+// referralStatus: 'none' | 'recommended' | 'submitted' | 'under_review' | 'complete'
+//   'recommended' is never written by the AI or by a script — it is only ever
+//   computed for display (Tier 3 + no referral yet). Only a teacher's click on
+//   "Refer to Special Educator" ever writes 'submitted'.
+export const REFERRAL_STATUS_LABELS = {
+  none:         { EN: 'No Referral',          HI: 'कोई रेफरल नहीं' },
+  recommended:  { EN: 'Referral Recommended', HI: 'रेफरल सुझाया गया' },
+  submitted:    { EN: 'Referral Submitted',   HI: 'रेफरल भेजा गया' },
+  under_review: { EN: 'Under Review',         HI: 'समीक्षा जारी' },
+  complete:     { EN: 'Review Complete',      HI: 'समीक्षा पूर्ण' },
+};
+
+// Practical, support-based recommendations a special educator can attach to a
+// referral. Grouped by support area purely to help the specialist scan
+// faster in the UI — any recommendation can be picked for any student.
+export const RECOMMENDATION_TEMPLATES = [
+  { id: 'rec_reading_1',  area: 'reading',      EN: 'Small-group reading intervention',              HI: 'छोटे समूह में पठन हस्तक्षेप' },
+  { id: 'rec_reading_2',  area: 'reading',      EN: 'Additional phonological awareness practice',     HI: 'अतिरिक्त ध्वन्यात्मक जागरूकता अभ्यास' },
+  { id: 'rec_reading_3',  area: 'reading',      EN: 'Paired/buddy reading with audio support',        HI: 'ऑडियो सहायता के साथ जोड़ी में पठन' },
+  { id: 'rec_writing_1',  area: 'writing',      EN: 'Reduced writing load with oral alternatives',     HI: 'कम लेखन भार, मौखिक विकल्पों के साथ' },
+  { id: 'rec_writing_2',  area: 'writing',      EN: 'Daily fine-motor / handwriting practice',         HI: 'दैनिक सूक्ष्म-गति / लिखावट अभ्यास' },
+  { id: 'rec_numeracy_1', area: 'numeracy',     EN: 'Object-based maths before symbolic notation',     HI: 'प्रतीकों से पहले वस्तु-आधारित गणित' },
+  { id: 'rec_numeracy_2', area: 'numeracy',     EN: 'Extra practice with place value and grouping',    HI: 'स्थानीय मान और समूहीकरण का अतिरिक्त अभ्यास' },
+  { id: 'rec_attention_1',area: 'attention',    EN: 'Seating near the front, away from distractions',  HI: 'आगे की सीट, ध्यान भटकाने वाली चीज़ों से दूर' },
+  { id: 'rec_attention_2',area: 'attention',    EN: 'Movement breaks every 15-20 minutes',              HI: 'हर 15-20 मिनट में गतिविधि अवकाश' },
+  { id: 'rec_memory_1',   area: 'memory',       EN: 'Visual supports during instruction',               HI: 'निर्देश के दौरान दृश्य सहायता' },
+  { id: 'rec_memory_2',   area: 'memory',       EN: 'Break multi-step instructions into smaller steps', HI: 'कई-चरण निर्देशों को छोटे चरणों में बाँटें' },
+  { id: 'rec_org_1',      area: 'organisation', EN: 'Checklist or visual schedule for daily tasks',     HI: 'दैनिक कामों के लिए चेकलिस्ट या दृश्य अनुसूची' },
+  { id: 'rec_general_1',  area: 'general',      EN: 'Weekly progress monitoring',                       HI: 'साप्ताहिक प्रगति निगरानी' },
+  { id: 'rec_general_2',  area: 'general',      EN: 'Follow-up review in 4-6 weeks',                    HI: '4-6 सप्ताह में अनुवर्ती समीक्षा' },
+];
+
+// Mock special-educator roster — demo realism only, no real auth/DB needed.
+export const MOCK_SPECIAL_EDUCATORS = [
+  { id: 'se_001', name: 'Dr. Anjali Mehta', role: 'Special Educator' },
+  { id: 'se_002', name: 'Mr. Suresh Iyer',  role: 'Special Educator' },
+];
+
+// Default referral fields merged onto every demo student below — keeps the
+// rest of the app (cards, panels, queue page) safe even for older records
+// that predate this feature.
+const REFERRAL_DEFAULTS = {
+  referralStatus: 'none',
+  referralDate: null,
+  teacherReferralReason: '',
+  teacherNotes: '',
+  referredBy: null,
+  specialEducatorReviewer: null,
+  specialEducatorNotes: '',
+  specialEducatorRecommendations: [],
+  reviewCompleted: false,
+  reviewDate: null,
+};
+
 // ─── DEMO STUDENT DATA ────────────────────────────────────────────────────────
 export const DEMO_STUDENTS = [
   {
@@ -110,6 +170,7 @@ export const DEMO_STUDENTS = [
       { date: '2026-06-10', author: 'Ms. Lata', note: 'Volunteered to read in class for the first time this term — good sign of growing confidence.' },
     ],
     specialistNotes: [],
+    ...REFERRAL_DEFAULTS,
   },
   {
     id: 'student_002',
@@ -143,15 +204,15 @@ export const DEMO_STUDENTS = [
       { date: '2026-06-02', author: 'Mr. Deshpande', note: 'Counts confidently with physical objects but freezes when the same problem is written as digits.' },
     ],
     specialistNotes: [],
+    ...REFERRAL_DEFAULTS,
   },
   {
     id: 'student_003',
     name: 'Rohit',
     class: 5,
     school: 'Team: CaseLyticals Demo School, UP',
-    supportProfile: { reading: 'some', writing: 'low', numeracy: 'low', attention: 'low', memory: 'low', organisation: 'low' },
+    supportProfile: { reading: 'high', writing: 'high', numeracy: 'low', attention: 'low', memory: 'low', organisation: 'low' },
     primarySupportArea: 'reading',
-    tier: 1,
     language: 'HI',
     lastActive: '8 days ago',
     streakDays: 0,
@@ -176,6 +237,15 @@ export const DEMO_STUDENTS = [
       { date: '2026-05-20', author: 'Ms. Lata', note: 'Engaged and improving before the gap in activity. Worth a quick personal check-in to re-engage him.' },
     ],
     specialistNotes: [],
+    ...REFERRAL_DEFAULTS,
+    // Pre-seeded so the Special Educator Queue page has a realistic example
+    // visible immediately, without needing to manually create one for a demo.
+    tier: 3,
+    referralStatus: 'submitted',
+    referralDate: '2026-06-15',
+    teacherReferralReason: 'Limited progress after several weeks of classroom-level reading support; concern that the gap may need a closer look beyond what I can do in class.',
+    teacherNotes: 'Engaged when re-approached individually, but reading accuracy has not moved despite consistent practice.',
+    referredBy: 'Ms. Lata',
   },
 ];
 

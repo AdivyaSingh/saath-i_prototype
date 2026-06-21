@@ -61,17 +61,6 @@ const buildActivities = (lang, S) => [
     route: '/number-world',
   },
   {
-    id: 'expression',
-    icon: Palette,
-    title: S.expressionStudio,
-    subtitle: lang === 'HI' ? 'बोलो, बनाओ, या शब्द जोड़ो' : 'Speak, draw, or build words',
-    duration: lang === 'HI' ? '~12 मिनट' : '~12 min',
-    borderColor: 'border-success',
-    iconBg: 'bg-success/10',
-    iconColor: 'text-success',
-    route: '/expression-studio',
-  },
-  {
     id: 'catchup',
     icon: Sparkles,
     title: lang === 'HI' ? 'कैच-अप कोर्स' : 'Catch-Up Courses',

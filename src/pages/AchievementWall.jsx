@@ -29,7 +29,6 @@ const TABS = [
   { id: 'all',        label: 'All',        labelHI: 'सभी',          icon: Sparkles },
   { id: 'reading',    label: 'Reading',    labelHI: 'पढ़ना',         icon: BookOpen },
   { id: 'maths',      label: 'Maths',      labelHI: 'गणित',          icon: Calculator },
-  { id: 'expression', label: 'Expression', labelHI: 'अभिव्यक्ति',   icon: Mic },
   { id: 'streak',     label: 'Streaks',    labelHI: 'स्ट्रीक',       icon: Flame },
 ];
 

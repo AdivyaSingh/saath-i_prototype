@@ -14,15 +14,17 @@ import Screening       from './pages/Screening';
 import StudentHome     from './pages/StudentHome';
 import ReadingRoom     from './pages/ReadingRoom';
 import NumberWorld     from './pages/NumberWorld';
-import ExpressionStudio from './pages/ExpressionStudio';
+
 import AchievementWall from './pages/AchievementWall';
 import FocusZone       from './pages/FocusZone';
 import CatchUpCourses  from './pages/CatchUpCourses';
 import TeacherDashboard from './pages/TeacherDashboard';
 import IEPGenerator    from './pages/IEPGenerator';
+import TeacherObservation from './pages/TeacherObservation';
 import ProgressAnalytics from './pages/ProgressAnalytics';
 import ResourceLibrary from './pages/ResourceLibrary';
 import TeacherAssistant from './pages/TeacherAssistant';
+import SpecialEducatorQueue from './pages/SpecialEducatorQueue';
 
 // ─── APP CONTEXT ──────────────────────────────────────────────────────────────
 export const AppContext = createContext(null);
@@ -132,7 +134,6 @@ export default function App() {
           <Route path="/home"              element={<StudentHome />} />
           <Route path="/reading-room"      element={<ReadingRoom />} />
           <Route path="/number-world"      element={<NumberWorld />} />
-          <Route path="/expression-studio" element={<ExpressionStudio />} />
           <Route path="/achievements"      element={<AchievementWall />} />
           <Route path="/focus-zone"        element={<FocusZone />} />
           <Route path="/catch-up"          element={<CatchUpCourses />} />
@@ -140,9 +141,11 @@ export default function App() {
           {/* Teacher journey */}
           <Route path="/teacher"           element={<TeacherDashboard />} />
           <Route path="/teacher/iep/:id"   element={<IEPGenerator />} />
+          <Route path="/teacher/observe/:id" element={<TeacherObservation />} />
           <Route path="/teacher/resources" element={<ResourceLibrary />} />
           <Route path="/teacher/assistant" element={<TeacherAssistant />} />
           <Route path="/teacher/analytics" element={<ProgressAnalytics />} />
+          <Route path="/teacher/queue"     element={<SpecialEducatorQueue />} />
 
           {/* 404 catch-all */}
           <Route path="*" element={<NotFound />} />

@@ -4,19 +4,19 @@
 // Student profile panel is a slide-in overlay within this page - not a separate route.
 
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   X, LogOut, ChevronDown, School, User, Wifi, BookOpen,
   Users, BarChart3, AlertTriangle, TrendingUp, TrendingDown,
   Minus, Flame, Lightbulb, Loader2, Mic, Image as ImageIcon,
   Eye, Hash, PenTool, Activity, Lock, CheckCircle2, KeyRound,
-  Delete, EyeOff, Bot,
+  Delete, EyeOff, Bot, Stethoscope, Send, ClipboardList,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Layout from '../components/Layout';
 import { useApp } from '../App';
-import { DEMO_STUDENTS, STRINGS, SUPPORT_AREAS, TIER_LABELS } from '../data';
-import { subscribeToStudents, verifyTeacherPin, createTeacher, generateClassCode } from '../firebase';
+import { DEMO_STUDENTS, STRINGS, SUPPORT_AREAS, TIER_LABELS, REFERRAL_STATUS_LABELS } from '../data';
+import { subscribeToStudents, verifyTeacherPin, createTeacher, generateClassCode, saveStudentToFirebase } from '../firebase';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +55,34 @@ const statusDotClass = {
   green:  'status-dot status-dot-green',
   yellow: 'status-dot status-dot-yellow',
   red:    'status-dot status-dot-red',
+};
+
+// ── PRIORITY 6: Special Educator Referral helpers ──────────────────────────
+// 'recommended' is never written to the database by anything automated — it
+// is only ever computed here for display, so a Tier 3 student with no
+// referral yet still nudges the teacher without anyone having "decided" for them.
+const referralPillClass = {
+  none:         'bg-gray-100 text-gray-500',
+  recommended:  'bg-warm/10 text-warm',
+  submitted:    'bg-accent/10 text-accent',
+  under_review: 'bg-amber-100 text-amber-700',
+  complete:     'bg-green-100 text-green-700',
+};
+
+const displayReferralStatus = (student) => {
+  const stored = student.referralStatus;
+  if (stored && stored !== 'none') return stored;
+  return student.tier === 3 ? 'recommended' : 'none';
+};
+
+const ReferralPill = ({ student, language }) => {
+  const status = displayReferralStatus(student);
+  const label = REFERRAL_STATUS_LABELS[status] || REFERRAL_STATUS_LABELS.none;
+  return (
+    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${referralPillClass[status]}`}>
+      {language === 'HI' ? label.HI : label.EN}
+    </span>
+  );
 };
 
 // Mastery map tile styles
@@ -183,6 +211,7 @@ function TelemetryStat({ label, value, barPercent, barColor }) {
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function TeacherDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { appState, updateState } = useApp();
   const { language, teacherLoggedIn, teacherName } = appState;
   const S = STRINGS[language];
@@ -264,6 +293,38 @@ export default function TeacherDashboard() {
   const [editingSuggestion, setEditingSuggestion] = useState(false);
   const [suggestionText,    setSuggestionText]    = useState('');
 
+  // ── PRIORITY 6: Special Educator Referral modal state ──────────────────────
+  const [referralModalStudent, setReferralModalStudent] = useState(null); // student object or null
+  const [referralReason,  setReferralReason]  = useState('');
+  const [referralNotes,   setReferralNotes]   = useState('');
+  const [submittingReferral, setSubmittingReferral] = useState(false);
+
+  const openReferralModal = (student) => {
+    setReferralReason(student.teacherReferralReason || '');
+    setReferralNotes(student.teacherNotes || '');
+    setReferralModalStudent(student);
+  };
+
+  const submitReferral = async () => {
+    if (!referralModalStudent || !referralReason.trim()) return;
+    setSubmittingReferral(true);
+    try {
+      await saveStudentToFirebase({
+        id: referralModalStudent.id,
+        referralStatus: 'submitted',
+        referralDate: new Date().toISOString().slice(0, 10),
+        teacherReferralReason: referralReason.trim(),
+        teacherNotes: referralNotes.trim(),
+        referredBy: teacherName,
+      });
+      setReferralModalStudent(null);
+    } catch (e) {
+      console.error('[TeacherDashboard] referral submit failed:', e);
+    } finally {
+      setSubmittingReferral(false);
+    }
+  };
+
   // Firebase real-time students
   const [firebaseStudents, setFirebaseStudents] = useState([]);
 
@@ -333,6 +394,31 @@ export default function TeacherDashboard() {
     setEditingSuggestion(false);
     setActiveStudentId(student.id);
   };
+
+  // ── PRIORITY 6: Deep-link from the AI Teacher Assistant ─────────────────────
+  // When the assistant's escalation button sends a teacher here with a specific
+  // student in mind (location.state.openReferralFor), open that student's panel
+  // and pre-open the referral modal. The AI never submits the referral itself —
+  // this just saves the teacher a click; they still have to fill in the reason
+  // and hit Submit.
+  useEffect(() => {
+    const targetId = location.state?.openReferralFor;
+    if (!targetId || allStudents.length === 0) return;
+    const target = allStudents.find(s => s.id === targetId);
+    if (target) {
+      openPanel(target);
+      openReferralModal(target);
+    }
+    // Clear the nav state so refreshing/back doesn't re-trigger this.
+    window.history.replaceState({}, document.title);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allStudents]);
+
+  // Pending referrals (submitted or under review) — shown as a small badge on
+  // the queue nav button so teachers notice without having to open it.
+  const pendingReferralCount = allStudents.filter(
+    s => s.referralStatus === 'submitted' || s.referralStatus === 'under_review'
+  ).length;
 
   // Stats derived from data
   const stats = deriveStats(allStudents, language);
@@ -639,6 +725,20 @@ export default function TeacherDashboard() {
             <BarChart3 size={14} />
             <span className="hidden sm:inline">{language === 'HI' ? 'विश्लेषण' : 'Analytics'}</span>
           </button>
+          {/* Special Educator Queue */}
+          <button
+            onClick={() => navigate('/teacher/queue')}
+            aria-label="Special Educator Queue"
+            className="relative flex items-center gap-1.5 text-sm text-warm border border-warm/30 px-3 py-1 rounded-lg min-h-[48px] hover:bg-warm/10 transition-colors font-semibold"
+          >
+            <Stethoscope size={14} />
+            <span className="hidden sm:inline">{language === 'HI' ? 'विशेषज्ञ कतार' : 'Specialist Queue'}</span>
+            {pendingReferralCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-4.5 h-4.5 min-w-[18px] min-h-[18px] rounded-full flex items-center justify-center">
+                {pendingReferralCount}
+              </span>
+            )}
+          </button>
           {/* Resource Library */}
           <button
             onClick={() => navigate('/teacher/resources')}
@@ -755,6 +855,7 @@ export default function TeacherDashboard() {
                 <span className={tierBadgeClass[student.tier] || 'badge bg-gray-100 text-gray-600'}>
                   {tierShortLabel(student.tier, language)}
                 </span>
+                <ReferralPill student={student} language={language} />
                 <span className="ml-auto text-xs text-muted font-medium">
                   {language === 'HI' ? `कक्षा ${student.class}` : `Class ${student.class}`}
                 </span>
@@ -800,7 +901,7 @@ export default function TeacherDashboard() {
               )}
 
               {/* Action buttons */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <motion.button
                   onClick={() => openPanel(student)}
                   whileTap={{ scale: 0.97 }}
@@ -817,6 +918,23 @@ export default function TeacherDashboard() {
                 >
                   {language === 'HI' ? 'IEP बनाएं' : 'Generate IEP'}
                 </motion.button>
+                {/* Refer to Special Educator — manual override always available;
+                    only hidden once a referral already exists for this student. */}
+                {(!student.referralStatus || student.referralStatus === 'none') && (
+                  <motion.button
+                    onClick={() => openReferralModal(student)}
+                    whileTap={{ scale: 0.97 }}
+                    aria-label={`Refer ${student.name} to Special Educator`}
+                    className={`w-full text-xs font-semibold py-2 px-3 rounded-xl min-h-[44px] transition-colors shadow-sm flex items-center justify-center gap-1.5 ${
+                      student.tier === 3
+                        ? 'bg-warm text-white hover:bg-orange-600'
+                        : 'bg-white text-warm border border-warm/30 hover:bg-warm/10'
+                    }`}
+                  >
+                    <Stethoscope size={13} />
+                    {language === 'HI' ? 'विशेष शिक्षक को रेफर करें' : 'Refer to Special Educator'}
+                  </motion.button>
+                )}
               </div>
             </motion.div>
           ))}
@@ -904,6 +1022,7 @@ export default function TeacherDashboard() {
                   <span className={tierBadgeClass[activeStudent.tier] || 'badge'}>
                     {tierShortLabel(activeStudent.tier, language)}
                   </span>
+                  <ReferralPill student={activeStudent} language={language} />
                   <span className="text-xs text-muted">
                     {language === 'HI' ? `कक्षा ${activeStudent.class}` : `Class ${activeStudent.class}`}
                   </span>
@@ -1139,6 +1258,86 @@ export default function TeacherDashboard() {
                 </div>
               </section>
 
+              {/* ── Section 3c: Special Educator Referral (Priority 6) ──── */}
+              <section>
+                <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <Stethoscope size={14} className="text-warm" />
+                  {language === 'HI' ? 'विशेष शिक्षक रेफरल' : 'Special Educator Referral'}
+                </h3>
+
+                {(!activeStudent.referralStatus || activeStudent.referralStatus === 'none') ? (
+                  <div className="bg-surface rounded-xl p-3 border border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+                    <p className="text-xs text-muted">
+                      {activeStudent.tier === 3
+                        ? (language === 'HI'
+                            ? 'यह छात्र स्तर 3 पर है — रेफरल पर विचार करें।'
+                            : 'This student is Tier 3 — referral may be worth considering.')
+                        : (language === 'HI' ? 'अभी कोई रेफरल नहीं भेजा गया।' : 'No referral has been submitted yet.')}
+                    </p>
+                    <button
+                      onClick={() => openReferralModal(activeStudent)}
+                      className="text-xs font-semibold text-warm border border-warm/30 px-3 py-1.5 rounded-lg hover:bg-warm/10 transition-colors flex items-center gap-1.5 flex-shrink-0"
+                    >
+                      <Send size={12} />
+                      {language === 'HI' ? 'रेफर करें' : 'Refer'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-surface rounded-xl p-3 border border-gray-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <ReferralPill student={activeStudent} language={language} />
+                      {activeStudent.referralDate && (
+                        <span className="text-xs text-muted">{activeStudent.referralDate}</span>
+                      )}
+                    </div>
+                    {activeStudent.teacherReferralReason && (
+                      <p className="text-sm text-primary">{activeStudent.teacherReferralReason}</p>
+                    )}
+                    {activeStudent.referredBy && (
+                      <p className="text-xs text-muted">— {activeStudent.referredBy}</p>
+                    )}
+
+                    {activeStudent.referralStatus === 'complete' && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <p className="text-xs font-bold text-primary uppercase tracking-wide mb-1.5">
+                          {language === 'HI' ? 'विशेषज्ञ सुझाव' : 'Specialist Recommendations'}
+                        </p>
+                        <ul className="space-y-1 mb-1">
+                          {(activeStudent.specialEducatorRecommendations || []).map((rec, i) => (
+                            <li key={i} className="text-xs text-primary flex items-start gap-1.5">
+                              <CheckCircle2 size={12} className="text-green-600 mt-0.5 flex-shrink-0" />
+                              {rec}
+                            </li>
+                          ))}
+                        </ul>
+                        {activeStudent.specialEducatorNotes && (
+                          <p className="text-xs text-muted italic">{activeStudent.specialEducatorNotes}</p>
+                        )}
+                        <p className="text-xs text-muted mt-1">
+                          — {activeStudent.specialEducatorReviewer || (language === 'HI' ? 'विशेष शिक्षक' : 'Special Educator')}
+                          {activeStudent.reviewDate ? `, ${activeStudent.reviewDate}` : ''}
+                        </p>
+                        <p className="text-xs text-calm mt-2 flex items-center gap-1.5">
+                          <ClipboardList size={12} />
+                          {language === 'HI'
+                            ? 'ये सुझाव अब IEP बनाते समय शामिल होंगे।'
+                            : 'These are now included automatically when you generate an IEP.'}
+                        </p>
+                      </div>
+                    )}
+
+                    {(activeStudent.referralStatus === 'submitted' || activeStudent.referralStatus === 'under_review') && (
+                      <button
+                        onClick={() => navigate('/teacher/queue')}
+                        className="text-xs font-semibold text-accent mt-1"
+                      >
+                        {language === 'HI' ? 'विशेषज्ञ कतार में देखें →' : 'View in Specialist Queue →'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </section>
+
               {/* ── Section 4: This Week ──────────────────────────────── */}
               <section>
                 <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
@@ -1260,7 +1459,24 @@ export default function TeacherDashboard() {
               </section>
 
               {/* ── Bottom CTA ────────────────────────────────────────── */}
-              <div className="pb-6">
+              <div className="pb-6 space-y-3">
+                <button
+                  onClick={() => navigate(`/teacher/observe/${activeStudent.id}`)}
+                  aria-label={`Observation and tendencies for ${activeStudent.name}`}
+                  className="w-full bg-accent text-white font-semibold py-3 px-6 rounded-xl min-h-[48px] hover:bg-blue-600 transition-colors shadow-sm"
+                >
+                  {activeStudent.screeningStatus === 'complete'
+                    ? (language === 'HI' ? 'प्रवृत्तियाँ देखें' : 'View tendencies')
+                    : (language === 'HI' ? 'अवलोकन भरें / प्रवृत्तियाँ →' : 'Observation & tendencies →')}
+                </button>
+                {activeStudent.referralStatus === 'complete' && (
+                  <p className="text-xs text-calm text-center flex items-center justify-center gap-1.5">
+                    <ClipboardList size={12} />
+                    {language === 'HI'
+                      ? 'विशेषज्ञ सुझाव इस IEP में स्वतः शामिल होंगे।'
+                      : "Specialist recommendations will be included in this student's IEP automatically."}
+                  </p>
+                )}
                 <motion.button
                   onClick={() => navigate(`/teacher/iep/${activeStudent.id}`)}
                   whileTap={{ scale: 0.97 }}
@@ -1276,6 +1492,84 @@ export default function TeacherDashboard() {
           </div>
         )}
       </div>
+
+      {/* ── PRIORITY 6: Refer to Special Educator modal ──────────────────── */}
+      <AnimatePresence>
+        {referralModalStudent && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center px-4"
+            onClick={() => setReferralModalStudent(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Refer to Special Educator"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Stethoscope size={20} className="text-warm" />
+                  <h2 className="text-lg font-bold text-primary">
+                    {language === 'HI' ? 'विशेष शिक्षक को रेफर करें' : 'Refer to Special Educator'}
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setReferralModalStudent(null)}
+                  aria-label="Close"
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-muted"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <p className="text-sm text-muted mb-4">{referralModalStudent.name}</p>
+
+              <label className="text-xs font-bold text-primary uppercase tracking-wide mb-1.5 block">
+                {language === 'HI' ? 'चिंता का कारण' : 'Reason for concern'} <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={referralReason}
+                onChange={(e) => setReferralReason(e.target.value)}
+                rows={3}
+                placeholder={language === 'HI' ? 'क्यों आपको लगता है कि इसे विशेषज्ञ की राय चाहिए...' : 'Why do you feel this student needs specialist input...'}
+                className="w-full text-sm border border-gray-200 rounded-xl p-3 mb-4 focus:border-warm focus:outline-none resize-none"
+              />
+
+              <label className="text-xs font-bold text-primary uppercase tracking-wide mb-1.5 block">
+                {language === 'HI' ? 'अतिरिक्त टिप्पणियाँ (वैकल्पिक)' : 'Optional observations'}
+              </label>
+              <textarea
+                value={referralNotes}
+                onChange={(e) => setReferralNotes(e.target.value)}
+                rows={2}
+                placeholder={language === 'HI' ? 'कोई और जानकारी जो विशेषज्ञ को मदद कर सके...' : 'Anything else that might help the specialist...'}
+                className="w-full text-sm border border-gray-200 rounded-xl p-3 mb-4 focus:border-warm focus:outline-none resize-none"
+              />
+
+              <p className="text-xs text-muted mb-4">
+                {language === 'HI'
+                  ? 'यह छात्र को कोई निदान नहीं देता — यह केवल विशेषज्ञ समीक्षा के लिए एक अनुरोध है।'
+                  : 'This does not diagnose the student — it only requests a specialist review.'}
+              </p>
+
+              <button
+                onClick={submitReferral}
+                disabled={!referralReason.trim() || submittingReferral}
+                className="w-full bg-warm text-white font-semibold py-3 rounded-xl min-h-[48px] disabled:opacity-40 hover:bg-orange-600 transition-colors flex items-center justify-center gap-2"
+              >
+                {submittingReferral ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                {language === 'HI' ? 'रेफरल भेजें' : 'Submit Referral'}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Layout>
   );
 }

@@ -485,10 +485,18 @@ export default function TeacherAssistant() {
                           }
                         </button>
 
-                        {/* Escalation / Referral prompt */}
+                        {/* Escalation / Referral prompt — the AI only ever
+                            suggests; clicking this still requires the teacher
+                            to fill in a reason and hit Submit on the
+                            dashboard's referral modal. */}
                         {msg.escalate && (
                           <button
-                            onClick={() => navigate('/teacher')}
+                            onClick={() => navigate(
+                              '/teacher',
+                              selectedStudentId !== 'general'
+                                ? { state: { openReferralFor: selectedStudentId } }
+                                : undefined
+                            )}
                             aria-label="Refer to specialist"
                             className="flex items-center gap-1.5 text-xs text-warm font-semibold bg-warm/10 hover:bg-warm/20 border border-warm/20 px-2.5 py-1 rounded-lg transition-colors min-h-[28px]"
                           >

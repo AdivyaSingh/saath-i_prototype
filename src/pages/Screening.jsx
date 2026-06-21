@@ -1,1319 +1,702 @@
 // src/pages/Screening.jsx
-// Route: /screening
-// 3 screening activities that identify SLD type through real behavioral tracking.
-// Always framed as games, never as tests. No scores/timers visible to the student.
+// Route: /screening  (student portal)
+//
+// PRIORITY 1 — research-backed, audio-supported screening that builds a SUPPORT
+// PROFILE (never a diagnosis). The student plays short games. They are NEVER shown
+// a score, a level, a label, or any "tendency": the completion screen is purely
+// encouraging. All results flow only to the teacher portal (TeacherObservation.jsx).
+//
+// Domains map to the app supportProfile keys: reading, numeracy, memory, attention,
+// writing, organisation. High-value areas (reading, numeracy) use two tasks (two-stage).
+// Audio: every prompt is spoken automatically (when audio is on) AND has a speaker
+// button, so a child who is not yet reading can still play.
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Volume2,
-  ArrowRight,
-  CheckCircle2,
-  Circle,
-  Sparkles,
-  Play,
-  Target,
-  Hand,
-} from 'lucide-react';
+import { Volume2, VolumeX, ArrowRight, Sparkles, CheckCircle2, Star } from 'lucide-react';
 import { useApp } from '../App';
-import {
-  STRINGS,
-  COMPANIONS,
-  SCREENING_WORD_SETS,
-  SCREENING_PILE_ROUNDS,
-  SCREENING_TRACE_PATHS,
-  TYPICAL_THRESHOLD,
-} from '../data';
+import { STRINGS, TYPICAL_THRESHOLD, SCREENING_TRACE_PATHS } from '../data';
 import Layout from '../components/Layout';
 import { saveStudentToFirebase, saveScreeningResults } from '../firebase';
 import confetti from 'canvas-confetti';
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const TOTAL_ACTIVITIES = 3;
+// ─── AUDIO (robust speechSynthesis helper) ──────────────────────────────────
+let voicesPrimed = false;
+function primeVoices(){
+  if (voicesPrimed || !('speechSynthesis' in window)) return;
+  try { window.speechSynthesis.getVoices(); } catch (e) {}
+  voicesPrimed = true;
+}
+function speak(text, lang){
+  try {
+    if (!('speechSynthesis' in window) || !text) return;
+    primeVoices();
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(String(text));
+    u.lang = lang === 'HI' ? 'hi-IN' : 'en-IN';
+    u.rate = 0.9;
+    window.speechSynthesis.speak(u);
+  } catch (e) { /* no-op */ }
+}
+function stopSpeak(){ try { window.speechSynthesis.cancel(); } catch (e) {} }
 
-// Scoring weights
-const DYSLEXIA_WEIGHTS = { errorRate: 0.4, audioReliance: 0.3, responseSlowness: 0.3 };
-const DYSCALCULIA_WEIGHTS = { errorRate: 0.5, closeNumberError: 0.3, responseTime: 0.2 };
-const DYSGRAPHIA_WEIGHTS = { deviation: 0.4, jitter: 0.35, incompletion: 0.25 };
+// ─── SMALL UTILITIES ─────────────────────────────────────────────────────────
+const shuffle = (a) => { a = a.slice(); for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+const randInt = (n) => Math.floor(Math.random()*n);
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+const mean = (arr) => arr.length ? arr.reduce((s,x)=>s+x,0)/arr.length : 0;
+const sd = (arr) => { if (arr.length<2) return 0; const m=mean(arr); return Math.sqrt(mean(arr.map(x=>(x-m)*(x-m)))); };
 
-// Tracing tolerance thresholds (in pixels, on a 400×250 canvas)
-const TRACE_GREEN = 15;
-const TRACE_YELLOW = 25;
-
-// Baseline response time thresholds (ms) - used to normalize slowness
-const RHYME_EXPECTED_MS = 5000;
-const PILE_EXPECTED_MS = 4000;
-
-// ─── SpeechSynthesis helper ───────────────────────────────────────────────────
-const speakWord = (word, lang) => {
-  if (!('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
-  const utt = new SpeechSynthesisUtterance(word);
-  utt.lang = lang === 'HI' ? 'hi-IN' : 'en-IN';
-  utt.rate = 0.85;
-  window.speechSynthesis.speak(utt);
-};
-
-// ─── Canvas path utilities ────────────────────────────────────────────────────
-// Convert normalized (0-1) path points to pixel coordinates on the canvas
-const toCanvasCoords = (points, width, height) =>
-  points.map((p) => ({ x: p.x * width, y: p.y * height }));
-
-// Sample evenly-spaced points along a polyline path for distance calculations
-const samplePolyline = (points, numSamples = 300) => {
+// ─── TRACE (dysgraphia / fine-motor) helpers — ported from the original screening.
+// NOTE: screen-based tracing is only a ROUGH motor signal (trackpads/phones vary),
+// so it is treated as a flag to confirm with hands-on classroom observation, never a
+// conclusion. Dysgraphia cannot be remediated in the app; a flag becomes a teacher
+// suggestion for hands-on, in-class support.
+const TRACE_DEV_W = 0.40, TRACE_JIT_W = 0.35, TRACE_INC_W = 0.25;
+const toCanvasCoords = (points, w, h) => points.map(p => ({ x: p.x*w, y: p.y*h }));
+const samplePolyline = (points, n = 300) => {
   if (points.length < 2) return points;
-  const sampled = [];
-  // Calculate total length
-  let totalLen = 0;
-  for (let i = 1; i < points.length; i++) {
-    totalLen += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-  }
-  const stepLen = totalLen / numSamples;
-  let segIdx = 0;
-  let segProgress = 0;
-
-  for (let s = 0; s <= numSamples; s++) {
-    const targetDist = s * stepLen;
-    let accumulated = 0;
-    let placed = false;
-
-    for (let i = 1; i < points.length; i++) {
-      const segLen = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-      if (accumulated + segLen >= targetDist) {
-        const t = segLen > 0 ? (targetDist - accumulated) / segLen : 0;
-        sampled.push({
-          x: points[i - 1].x + t * (points[i].x - points[i - 1].x),
-          y: points[i - 1].y + t * (points[i].y - points[i - 1].y),
-        });
-        placed = true;
-        break;
-      }
-      accumulated += segLen;
-    }
-    if (!placed) sampled.push(points[points.length - 1]);
-  }
-  return sampled;
+  let total = 0; for (let i=1;i<points.length;i++) total += Math.hypot(points[i].x-points[i-1].x, points[i].y-points[i-1].y);
+  const step = total/n; const out = [];
+  for (let s=0;s<=n;s++){ const target=s*step; let acc=0, placed=false;
+    for (let i=1;i<points.length;i++){ const seg=Math.hypot(points[i].x-points[i-1].x, points[i].y-points[i-1].y);
+      if (acc+seg>=target){ const t=seg>0?(target-acc)/seg:0; out.push({ x:points[i-1].x+t*(points[i].x-points[i-1].x), y:points[i-1].y+t*(points[i].y-points[i-1].y) }); placed=true; break; } acc+=seg; }
+    if (!placed) out.push(points[points.length-1]); }
+  return out;
 };
-
-// Minimum distance from a point to any point on the sampled path
-const minDistToPath = (pt, pathPts) =>
-  pathPts.reduce((min, pp) => {
-    const d = Math.hypot(pt.x - pp.x, pt.y - pp.y);
-    return d < min ? d : min;
-  }, Infinity);
-
-// Compute detailed trace metrics
-const computeTraceMetrics = (drawnPoints, pathPoints) => {
-  if (drawnPoints.length < 5) {
-    return { avgDeviation: 999, jitterScore: 1, completionPct: 0 };
+const minDistToPath = (pt, path) => path.reduce((min,pp)=>{ const d=Math.hypot(pt.x-pp.x, pt.y-pp.y); return d<min?d:min; }, Infinity);
+const computeTraceMetrics = (drawn, pathPts) => {
+  if (drawn.length < 5) return { avgDeviation:999, jitterScore:1, completionPct:0 };
+  const sampled = samplePolyline(pathPts, 300);
+  let totalDev = 0; for (const p of drawn) totalDev += minDistToPath(p, sampled);
+  const avgDeviation = totalDev / drawn.length;
+  let totalAngle = 0, count = 0;
+  for (let i=2;i<drawn.length;i++){
+    const a1=Math.atan2(drawn[i-1].y-drawn[i-2].y, drawn[i-1].x-drawn[i-2].x);
+    const a2=Math.atan2(drawn[i].y-drawn[i-1].y, drawn[i].x-drawn[i-1].x);
+    let diff=Math.abs(a2-a1); if (diff>Math.PI) diff=2*Math.PI-diff; totalAngle+=diff; count++;
   }
-
-  const sampledPath = samplePolyline(pathPoints, 300);
-
-  // Average deviation from center line
-  let totalDeviation = 0;
-  for (const p of drawnPoints) {
-    totalDeviation += minDistToPath(p, sampledPath);
-  }
-  const avgDeviation = totalDeviation / drawnPoints.length;
-
-  // Jitter: average absolute angle change between consecutive segments
-  let totalAngleChange = 0;
-  let angleCount = 0;
-  for (let i = 2; i < drawnPoints.length; i++) {
-    const dx1 = drawnPoints[i - 1].x - drawnPoints[i - 2].x;
-    const dy1 = drawnPoints[i - 1].y - drawnPoints[i - 2].y;
-    const dx2 = drawnPoints[i].x - drawnPoints[i - 1].x;
-    const dy2 = drawnPoints[i].y - drawnPoints[i - 1].y;
-    const angle1 = Math.atan2(dy1, dx1);
-    const angle2 = Math.atan2(dy2, dx2);
-    let diff = Math.abs(angle2 - angle1);
-    if (diff > Math.PI) diff = 2 * Math.PI - diff;
-    totalAngleChange += diff;
-    angleCount++;
-  }
-  const avgAngleChange = angleCount > 0 ? totalAngleChange / angleCount : 0;
-  // Normalize jitter to 0-1 (pi/2 or above = max jitter)
-  const jitterScore = Math.min(avgAngleChange / (Math.PI / 2), 1);
-
-  // Completion: how far along the path did the drawn line reach?
-  // Find the closest path point index for the last drawn point
-  const lastDrawn = drawnPoints[drawnPoints.length - 1];
-  let maxPathIdx = 0;
-  let minDist = Infinity;
-  for (let i = 0; i < sampledPath.length; i++) {
-    const d = Math.hypot(lastDrawn.x - sampledPath[i].x, lastDrawn.y - sampledPath[i].y);
-    if (d < minDist) {
-      minDist = d;
-      maxPathIdx = i;
-    }
-  }
-  const completionPct = Math.min(maxPathIdx / (sampledPath.length - 1), 1);
-
+  const jitterScore = Math.min((count?totalAngle/count:0)/(Math.PI/2), 1);
+  const last = drawn[drawn.length-1]; let maxIdx=0, minD=Infinity;
+  for (let i=0;i<sampled.length;i++){ const d=Math.hypot(last.x-sampled[i].x, last.y-sampled[i].y); if (d<minD){ minD=d; maxIdx=i; } }
+  const completionPct = Math.min(maxIdx/(sampled.length-1), 1);
   return { avgDeviation, jitterScore, completionPct };
 };
-
-// Get canvas position from pointer/touch event
 const getCanvasPos = (e, canvas) => {
   const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
   const src = e.touches ? e.touches[0] : e;
-  return {
-    x: (src.clientX - rect.left) * scaleX,
-    y: (src.clientY - rect.top) * scaleY,
-  };
+  return { x:(src.clientX-rect.left)*(canvas.width/rect.width), y:(src.clientY-rect.top)*(canvas.height/rect.height) };
 };
-
-// ─── Canvas drawing function ──────────────────────────────────────────────────
-const drawCanvas = (ctx, pathPixels, userPoints, sampledPath, isDone) => {
+const drawTrace = (ctx, guide, drawn, done) => {
   const { width, height } = ctx.canvas;
-  ctx.clearRect(0, 0, width, height);
-
-  // Background
-  ctx.fillStyle = '#F8FAFC';
-  ctx.fillRect(0, 0, width, height);
-
-  // Draw subtle grid for depth
-  ctx.save();
-  ctx.strokeStyle = '#E2E8F0';
-  ctx.lineWidth = 0.5;
-  for (let x = 0; x < width; x += 20) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-  for (let y = 0; y < height; y += 20) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // Draw dotted guide path
-  ctx.save();
-  ctx.setLineDash([8, 6]);
-  ctx.strokeStyle = '#94A3B8';
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(pathPixels[0].x, pathPixels[0].y);
-  for (let i = 1; i < pathPixels.length; i++) {
-    ctx.lineTo(pathPixels[i].x, pathPixels[i].y);
-  }
-  ctx.stroke();
-  ctx.restore();
-
-  // Start marker
-  const startPt = pathPixels[0];
-  const endPt = pathPixels[pathPixels.length - 1];
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(startPt.x, startPt.y, 12, 0, Math.PI * 2);
-  ctx.fillStyle = '#22C55E';
-  ctx.globalAlpha = 0.3;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.beginPath();
-  ctx.arc(startPt.x, startPt.y, 6, 0, Math.PI * 2);
-  ctx.fillStyle = '#22C55E';
-  ctx.fill();
-  ctx.restore();
-
-  // "START" label
-  ctx.save();
-  ctx.font = 'bold 10px sans-serif';
-  ctx.fillStyle = '#22C55E';
-  ctx.textAlign = 'center';
-  ctx.fillText('START', startPt.x, startPt.y - 18);
-  ctx.restore();
-
-  // End marker
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(endPt.x, endPt.y, 12, 0, Math.PI * 2);
-  ctx.fillStyle = '#E87722';
-  ctx.globalAlpha = 0.3;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.beginPath();
-  ctx.arc(endPt.x, endPt.y, 6, 0, Math.PI * 2);
-  ctx.fillStyle = '#E87722';
-  ctx.fill();
-  ctx.restore();
-
-  // "END" label
-  ctx.save();
-  ctx.font = 'bold 10px sans-serif';
-  ctx.fillStyle = '#E87722';
-  ctx.textAlign = 'center';
-  ctx.fillText('END', endPt.x, endPt.y - 18);
-  ctx.restore();
-
-  // User trace - color-coded by accuracy
-  if (userPoints.length > 1 && sampledPath.length > 0) {
-    for (let i = 1; i < userPoints.length; i++) {
-      const dist = minDistToPath(userPoints[i], sampledPath);
-      let color;
-      if (dist <= TRACE_GREEN) {
-        color = '#22C55E'; // green - accurate
-      } else if (dist <= TRACE_YELLOW) {
-        color = '#EAB308'; // yellow - slightly off
-      } else {
-        color = '#E87722'; // orange - off path
-      }
-
-      ctx.save();
-      ctx.setLineDash([]);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 4;
-      ctx.lineCap = 'round';
-      ctx.globalAlpha = 0.85;
-      ctx.beginPath();
-      ctx.moveTo(userPoints[i - 1].x, userPoints[i - 1].y);
-      ctx.lineTo(userPoints[i].x, userPoints[i].y);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
+  ctx.clearRect(0,0,width,height);
+  ctx.fillStyle='#F8FAFC'; ctx.fillRect(0,0,width,height);
+  ctx.save(); ctx.setLineDash([8,6]); ctx.strokeStyle = done ? '#86C7A8' : '#94A3B8'; ctx.lineWidth=3; ctx.lineCap='round';
+  ctx.beginPath(); guide.forEach((p,i)=> i? ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); ctx.restore();
+  if (drawn.length>1){ ctx.save(); ctx.setLineDash([]); ctx.strokeStyle = done ? '#2E8B57':'#2E75B6'; ctx.lineWidth=4; ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.beginPath(); drawn.forEach((p,i)=> i? ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); ctx.restore(); }
+  if (guide[0]){ ctx.fillStyle='#E87722'; ctx.beginPath(); ctx.arc(guide[0].x, guide[0].y, 7, 0, Math.PI*2); ctx.fill(); }
 };
 
-// ─── Profile derivation ───────────────────────────────────────────────────────
-const deriveProfile = (rhymeData, pileData, traceData, isDemoMode) => {
-  // --- Dyslexia score ---
-  const rhymeErrorRate = rhymeData.totalRounds > 0
-    ? rhymeData.incorrectRounds / rhymeData.totalRounds
-    : 0;
-  const audioReliance = rhymeData.totalRounds > 0
-    ? Math.min(rhymeData.audioUseCount / (rhymeData.totalRounds * 2), 1)
-    : 0;
-  const avgRhymeTime = rhymeData.responseTimes.length > 0
-    ? rhymeData.responseTimes.reduce((a, b) => a + b, 0) / rhymeData.responseTimes.length
-    : 0;
-  const responseSlowness = Math.min(avgRhymeTime / RHYME_EXPECTED_MS, 1);
-
-  const dyslexiaScore =
-    rhymeErrorRate * DYSLEXIA_WEIGHTS.errorRate +
-    audioReliance * DYSLEXIA_WEIGHTS.audioReliance +
-    responseSlowness * DYSLEXIA_WEIGHTS.responseSlowness;
-
-  // --- Dyscalculia score ---
-  const pileErrorRate = pileData.totalRounds > 0
-    ? pileData.incorrectRounds / pileData.totalRounds
-    : 0;
-  const closeNumberErrorRate = pileData.hardRounds > 0
-    ? pileData.hardRoundErrors / pileData.hardRounds
-    : 0;
-  const avgPileTime = pileData.responseTimes.length > 0
-    ? pileData.responseTimes.reduce((a, b) => a + b, 0) / pileData.responseTimes.length
-    : 0;
-  const pileTimeFactor = Math.min(avgPileTime / PILE_EXPECTED_MS, 1);
-
-  const dyscalculiaScore =
-    pileErrorRate * DYSCALCULIA_WEIGHTS.errorRate +
-    closeNumberErrorRate * DYSCALCULIA_WEIGHTS.closeNumberError +
-    pileTimeFactor * DYSCALCULIA_WEIGHTS.responseTime;
-
-  // --- Dysgraphia score ---
-  // Normalize deviation: 0px = 0 score, 40px+ = 1.0
-  const deviationNorm = Math.min(traceData.avgDeviation / 40, 1);
-  const jitterNorm = traceData.jitterScore; // already 0-1
-  const incompletionPenalty = 1 - traceData.completionPct;
-
-  const dysgraphiaScore =
-    deviationNorm * DYSGRAPHIA_WEIGHTS.deviation +
-    jitterNorm * DYSGRAPHIA_WEIGHTS.jitter +
-    incompletionPenalty * DYSGRAPHIA_WEIGHTS.incompletion;
-
-  // Clamp all scores to 0-1
-  let scores = {
-    dyslexiaScore: Math.min(Math.max(dyslexiaScore, 0), 1),
-    dyscalculiaScore: Math.min(Math.max(dyscalculiaScore, 0), 1),
-    dysgraphiaScore: Math.min(Math.max(dysgraphiaScore, 0), 1),
-  };
-
-  // Demo mode bias: nudge dyslexia score up to match Arjun's profile
-  if (isDemoMode) {
-    scores.dyslexiaScore = Math.min(scores.dyslexiaScore + 0.15, 1);
-  }
-
-  // Determine detected type
-  let detectedType = 'typical';
-  const maxScore = Math.max(scores.dyslexiaScore, scores.dyscalculiaScore, scores.dysgraphiaScore);
-  
-  if (maxScore > TYPICAL_THRESHOLD) {
-    detectedType = 'dyslexia';
-    if (maxScore === scores.dyscalculiaScore) detectedType = 'dyscalculia';
-    if (maxScore === scores.dysgraphiaScore) detectedType = 'dysgraphia';
-    // If dyslexia ties or wins, it stays as 'dyslexia'
-    if (scores.dyslexiaScore >= maxScore) detectedType = 'dyslexia';
-  }
-
-  return { ...scores, detectedType };
-};
-
-// ─── Support-profile mapping (additive — does not change scoring above) ──────
-// Converts the existing dyslexia/dyscalculia/dysgraphia scores into the
-// support-based shape the teacher dashboard and IEP generator expect:
-// supportProfile (per area: low/some/high), primarySupportArea, tier (1-3).
-// This keeps deriveProfile()'s scoring untouched — it only relabels the output
-// for storage, the same way the rest of the app already treats these scores
-// as support signals rather than diagnoses.
-const scoreToLevel = (score) => (score > 0.6 ? 'high' : score > TYPICAL_THRESHOLD ? 'some' : 'low');
-
-const toSupportProfile = (result) => {
-  const supportProfile = {
-    reading: scoreToLevel(result.dyslexiaScore),
-    writing: scoreToLevel(result.dysgraphiaScore),
-    numeracy: scoreToLevel(result.dyscalculiaScore),
-    // Not measured by the current three screening tasks — default to 'low' until
-    // Focus Zone / attention & memory tasks are added (priority 2).
-    attention: 'low',
-    memory: 'low',
-    organisation: 'low',
-  };
-
-  const areaForType = { dyslexia: 'reading', dysgraphia: 'writing', dyscalculia: 'numeracy' };
-  const primarySupportArea = areaForType[result.detectedType] || 'reading';
-
-  const maxScore = Math.max(result.dyslexiaScore, result.dyscalculiaScore, result.dysgraphiaScore);
-  const tier = result.detectedType === 'typical' ? 1 : maxScore > 0.6 ? 3 : 2;
-
-  return { supportProfile, primarySupportArea, tier };
-};
-
-// Child-friendly profile descriptions (no clinical labels)
-const PROFILE_MESSAGES = {
-  dyslexia: {
-    EN: 'You learn best through listening and sounds',
-    HI: 'आप सुनकर और ध्वनि से सबसे अच्छा सीखते हैं',
-  },
-  dyscalculia: {
-    EN: 'You learn best with objects and visuals',
-    HI: 'आप चीज़ों और चित्रों से सबसे अच्छा सीखते हैं',
-  },
-  dysgraphia: {
-    EN: 'You express yourself best through speaking and drawing',
-    HI: 'आप बोलकर और बनाकर सबसे अच्छा व्यक्त करते हैं',
-  },
-};
-
-// ─── Main component ───────────────────────────────────────────────────────────
-export default function Screening() {
-  const navigate = useNavigate();
-  const { appState, updateState } = useApp();
-  const lang = appState.language;
-  const S = STRINGS[lang] || STRINGS.EN;
-
-  // ── Activity progression ──────────────────────────────────────────────────
-  const [activityIndex, setActivityIndex] = useState(0); // 0, 1, 2, 3 (done)
-  const [transitioning, setTransitioning] = useState(false);
-  const [companionState, setCompanionState] = useState('idle');
-
-  const advanceActivity = useCallback(() => {
-    setTransitioning(true);
-    setTimeout(() => {
-      setActivityIndex((i) => i + 1);
-      setCompanionState('idle');
-      setTransitioning(false);
-    }, 500);
-  }, []);
-
-  // Brief companion state change helper
-  const flashCompanion = useCallback((state, durationMs = 1500) => {
-    setCompanionState(state);
-    setTimeout(() => setCompanionState('idle'), durationMs);
-  }, []);
-
-  // ══════════════════════════════════════════════════════════════════════════════
-  // ACTIVITY 1: Word Sound Game (Dyslexia proxy)
-  // ══════════════════════════════════════════════════════════════════════════════
-  const [rhymeRound, setRhymeRound] = useState(0);
-  const [rhymeSelected, setRhymeSelected] = useState([]); // indices of selected cards
-  const [rhymeFeedback, setRhymeFeedback] = useState(null); // null | 'correct' | 'incorrect'
-  const [rhymeCorrectPair, setRhymeCorrectPair] = useState([]); // revealed correct pair indices
-  const rhymeLocked = useRef(false);
-  const rhymeRoundStart = useRef(Date.now());
-  const [shuffledRhymeIndices, setShuffledRhymeIndices] = useState([0, 1, 2, 3]);
-
-  useEffect(() => {
-    const indices = [0, 1, 2, 3];
-    for (let i = indices.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [indices[i], indices[j]] = [indices[j], indices[i]];
-    }
-    setShuffledRhymeIndices(indices);
-  }, [rhymeRound]);
-
-  // Tracking data for dyslexia scoring
-  const rhymeDataRef = useRef({
-    totalRounds: SCREENING_WORD_SETS.length,
-    incorrectRounds: 0,
-    audioUseCount: 0,
-    responseTimes: [],
-  });
-
-  const handleAudioPlay = (word) => {
-    rhymeDataRef.current.audioUseCount++;
-    speakWord(word, lang);
-  };
-
-  const handleRhymeTap = (idx) => {
-    if (rhymeLocked.current || rhymeFeedback) return;
-
-    const next = rhymeSelected.includes(idx)
-      ? rhymeSelected.filter((i) => i !== idx)
-      : [...rhymeSelected, idx].slice(-2);
-
-    setRhymeSelected(next);
-
-    if (next.length === 2) {
-      rhymeLocked.current = true;
-      const responseTime = Date.now() - rhymeRoundStart.current;
-      rhymeDataRef.current.responseTimes.push(responseTime);
-
-      const round = SCREENING_WORD_SETS[rhymeRound];
-      const [a, b] = round.rhymePair;
-      const isCorrect = next.includes(a) && next.includes(b);
-
-      if (isCorrect) {
-        setRhymeFeedback('correct');
-        flashCompanion('happy', 1400);
-        setTimeout(() => {
-          rhymeLocked.current = false;
-          setRhymeSelected([]);
-          setRhymeFeedback(null);
-          setRhymeCorrectPair([]);
-          const nextRound = rhymeRound + 1;
-          if (nextRound < SCREENING_WORD_SETS.length) {
-            setRhymeRound(nextRound);
-            rhymeRoundStart.current = Date.now();
-          } else {
-            advanceActivity();
-          }
-        }, 1500);
-      } else {
-        // Incorrect - track it, show encouraging feedback, reveal correct pair
-        rhymeDataRef.current.incorrectRounds++;
-        setRhymeFeedback('incorrect');
-        setRhymeCorrectPair([a, b]);
-        flashCompanion('encouraging', 2000);
-        setTimeout(() => {
-          rhymeLocked.current = false;
-          setRhymeSelected([]);
-          setRhymeFeedback(null);
-          setRhymeCorrectPair([]);
-          const nextRound = rhymeRound + 1;
-          if (nextRound < SCREENING_WORD_SETS.length) {
-            setRhymeRound(nextRound);
-            rhymeRoundStart.current = Date.now();
-          } else {
-            advanceActivity();
-          }
-        }, 2200);
-      }
-    }
-  };
-
-  // ══════════════════════════════════════════════════════════════════════════════
-  // ACTIVITY 2: Which Group Has More? (Dyscalculia proxy)
-  // ══════════════════════════════════════════════════════════════════════════════
-  const [pileRound, setPileRound] = useState(0);
-  const [pileChosen, setPileChosen] = useState(null); // 'left' | 'right' | null
-  const [pileFeedback, setPileFeedback] = useState(null); // null | 'correct' | 'incorrect'
-  const [pileCorrectSide, setPileCorrectSide] = useState(null);
-  const pileLocked = useRef(false);
-  const pileRoundStart = useRef(Date.now());
-
-  // Randomize which display-side each pile appears on
-  const [pileSwaps] = useState(() =>
-    SCREENING_PILE_ROUNDS.map(() => Math.random() > 0.5)
-  );
-
-  // Tracking data for dyscalculia scoring
-  const pileDataRef = useRef({
-    totalRounds: SCREENING_PILE_ROUNDS.length,
-    incorrectRounds: 0,
-    hardRounds: 0,
-    hardRoundErrors: 0,
-    responseTimes: [],
-  });
-
-  // Count hard rounds on mount
-  useEffect(() => {
-    pileDataRef.current.hardRounds = SCREENING_PILE_ROUNDS.filter(
-      (r) => r.difficulty === 'hard'
-    ).length;
-  }, []);
-
-  // Reset pile round start timer when activity 2 starts
-  useEffect(() => {
-    if (activityIndex === 1) {
-      pileRoundStart.current = Date.now();
-    }
-  }, [activityIndex]);
-
-  const getPileValues = (roundIdx) => {
-    const round = SCREENING_PILE_ROUNDS[roundIdx];
-    const swapped = pileSwaps[roundIdx];
-    // displayLeft/displayRight are the counts shown on screen
-    const displayLeft = swapped ? round.right : round.left;
-    const displayRight = swapped ? round.left : round.right;
-    // The correct display side
-    const actualBigger = round.left > round.right ? 'left' : 'right';
-    const correctDisplaySide = swapped
-      ? (actualBigger === 'left' ? 'right' : 'left')
-      : actualBigger;
-    return { displayLeft, displayRight, correctDisplaySide, difficulty: round.difficulty };
-  };
-
-  const handlePileTap = (side) => {
-    if (pileLocked.current || pileChosen) return;
-    pileLocked.current = true;
-    setPileChosen(side);
-
-    const responseTime = Date.now() - pileRoundStart.current;
-    pileDataRef.current.responseTimes.push(responseTime);
-
-    const { correctDisplaySide, difficulty } = getPileValues(pileRound);
-    const isCorrect = side === correctDisplaySide;
-
-    if (isCorrect) {
-      setPileFeedback('correct');
-      setPileCorrectSide(correctDisplaySide);
-      flashCompanion('happy', 1300);
-      setTimeout(() => {
-        pileLocked.current = false;
-        setPileChosen(null);
-        setPileFeedback(null);
-        setPileCorrectSide(null);
-        const nextRound = pileRound + 1;
-        if (nextRound < SCREENING_PILE_ROUNDS.length) {
-          setPileRound(nextRound);
-          pileRoundStart.current = Date.now();
-        } else {
-          advanceActivity();
-        }
-      }, 1400);
-    } else {
-      pileDataRef.current.incorrectRounds++;
-      if (difficulty === 'hard') {
-        pileDataRef.current.hardRoundErrors++;
-      }
-      setPileFeedback('incorrect');
-      setPileCorrectSide(correctDisplaySide);
-      flashCompanion('encouraging', 1800);
-      setTimeout(() => {
-        pileLocked.current = false;
-        setPileChosen(null);
-        setPileFeedback(null);
-        setPileCorrectSide(null);
-        const nextRound = pileRound + 1;
-        if (nextRound < SCREENING_PILE_ROUNDS.length) {
-          setPileRound(nextRound);
-          pileRoundStart.current = Date.now();
-        } else {
-          advanceActivity();
-        }
-      }, 2000);
-    }
-  };
-
-  // ══════════════════════════════════════════════════════════════════════════════
-  // ACTIVITY 3: Trace the Path (Dysgraphia proxy)
-  // ══════════════════════════════════════════════════════════════════════════════
-  const CANVAS_W = 400;
-  const CANVAS_H = 250;
-
-  const [tracePathIdx, setTracePathIdx] = useState(0);
-  const [traceDone, setTraceDone] = useState(false);
-  const [allTracesDone, setAllTracesDone] = useState(false);
+// ─── TRACE PATH TASK (writing / fine-motor; the kept dysgraphia test) ────────
+function TracePathTask({ lang, audioOn, onDone }){
+  const W = 400, H = 250;
+  const [started, setStarted] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [done, setDone] = useState(false);
   const canvasRef = useRef(null);
-  const isDrawingRef = useRef(false);
+  const drawingRef = useRef(false);
   const drawnRef = useRef([]);
+  const accRef = useRef({ avgDeviation:0, jitterScore:0, completionPct:0, n:0 });
 
-  // Accumulated trace metrics across all paths
-  const traceMetricsRef = useRef({
-    avgDeviation: 0,
-    jitterScore: 0,
-    completionPct: 0,
-    pathCount: 0,
-  });
+  const path = SCREENING_TRACE_PATHS[idx];
+  const guide = path ? toCanvasCoords(path.points, W, H) : [];
 
-  // Current path data in pixel coordinates
-  const currentPath = SCREENING_TRACE_PATHS[tracePathIdx];
-  const pathPixels = currentPath
-    ? toCanvasCoords(currentPath.points, CANVAS_W, CANVAS_H)
-    : [];
-  const sampledPath = pathPixels.length > 1 ? samplePolyline(pathPixels, 300) : [];
+  useEffect(()=>{
+    if (!started) return;
+    const c = canvasRef.current; if (!c) return;
+    drawTrace(c.getContext('2d'), guide, [], false);
+    if (audioOn) speak(lang==='HI'?'बिंदु से शुरू करके लाइन पर उंगली फेरो':'Start at the dot and trace along the line', lang);
+    // eslint-disable-next-line
+  }, [started, idx]);
 
-  // Draw the canvas whenever the activity is shown or path changes
-  useEffect(() => {
-    if (activityIndex === 2 && canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
-      drawCanvas(ctx, pathPixels, [], sampledPath, false);
+  if (!started) return <TaskIntro icon={Star} title={lang==='HI'?'लाइन पर चलो':'Trace the Line'} text={lang==='HI'?'बिंदु से शुरू करके बिंदीदार लाइन पर उंगली फेरो।':'Start at the dot and trace along the dotted line with your finger.'} lang={lang} audioOn={audioOn} onStart={()=>setStarted(true)} />;
+
+  const pos = (e) => getCanvasPos(e, canvasRef.current);
+  const down = (e) => { if (done) return; e.preventDefault(); drawingRef.current = true; drawnRef.current = [pos(e)]; };
+  const move = (e) => { if (!drawingRef.current || done) return; e.preventDefault(); drawnRef.current.push(pos(e)); drawTrace(canvasRef.current.getContext('2d'), guide, drawnRef.current, false); };
+  const up = (e) => {
+    if (!drawingRef.current) return; e.preventDefault(); drawingRef.current = false;
+    if (drawnRef.current.length < 5) return;
+    const m = computeTraceMetrics(drawnRef.current, guide);
+    const a = accRef.current;
+    a.avgDeviation = (a.avgDeviation*a.n + m.avgDeviation)/(a.n+1);
+    a.jitterScore = (a.jitterScore*a.n + m.jitterScore)/(a.n+1);
+    a.completionPct = (a.completionPct*a.n + m.completionPct)/(a.n+1);
+    a.n++;
+    setDone(true);
+    drawTrace(canvasRef.current.getContext('2d'), guide, drawnRef.current, true);
+  };
+  const next = () => {
+    if (idx+1 < SCREENING_TRACE_PATHS.length){ setIdx(idx+1); setDone(false); drawnRef.current = []; }
+    else {
+      const a = accRef.current;
+      const deviationNorm = Math.min(a.avgDeviation/40, 1);
+      const concern = clamp01(deviationNorm*TRACE_DEV_W + a.jitterScore*TRACE_JIT_W + (1-a.completionPct)*TRACE_INC_W);
+      onDone({ concern, detail:{ kind:'motor', avgDeviation:Math.round(a.avgDeviation), jitter:Math.round(a.jitterScore*100)/100, completionPct:Math.round(a.completionPct*100) } });
     }
-  }, [activityIndex, tracePathIdx]);
+  };
 
-  const redrawCanvas = useCallback(
-    (done = false) => {
-      if (!canvasRef.current) return;
-      const ctx = canvasRef.current.getContext('2d');
-      drawCanvas(ctx, pathPixels, drawnRef.current, sampledPath, done);
-    },
-    [pathPixels, sampledPath]
+  return (
+    <div className="animate-fadeIn">
+      <div className="card-elevated p-4 text-center mb-4">
+        <p className="text-lg font-semibold text-primary flex items-center justify-center gap-2">
+          {lang==='HI'?'लाइन पर उंगली फेरो':'Trace along the line'}<Speaker text={lang==='HI'?'बिंदु से शुरू करके लाइन पर उंगली फेरो':'Start at the dot and trace along the line'} lang={lang} />
+        </p>
+        <p className="text-xs text-muted mt-1">{idx+1} / {SCREENING_TRACE_PATHS.length}</p>
+      </div>
+      <div className="card-elevated p-3 flex flex-col items-center">
+        <canvas ref={canvasRef} width={W} height={H}
+          style={{ width:'100%', maxWidth:W, touchAction:'none', borderRadius:12, cursor:'crosshair' }}
+          onMouseDown={down} onMouseMove={move} onMouseUp={up} onMouseLeave={up}
+          onTouchStart={down} onTouchMove={move} onTouchEnd={up} />
+        <button className={`btn-primary mt-4 inline-flex items-center gap-2 ${done?'':'opacity-50 pointer-events-none'}`} onClick={next}>
+          {idx+1 < SCREENING_TRACE_PATHS.length ? (lang==='HI'?'अगला':'Next') : (lang==='HI'?'हो गया':'Done')} <ArrowRight size={16} />
+        </button>
+      </div>
+    </div>
   );
+}
 
-  const handlePointerDown = (e) => {
-    if (traceDone) return;
-    e.preventDefault();
-    isDrawingRef.current = true;
-    drawnRef.current = [];
-    const pos = getCanvasPos(e, canvasRef.current);
-    drawnRef.current.push(pos);
+// ─── CONTENT BANKS (local; literacy items run in English with bilingual
+//     instructions — Hindi literacy banks are a planned addition) ────────────
+const RHYME = [
+  { audio:'cat', options:[{label:'hat',emoji:'🎩',correct:true},{label:'sun',emoji:'☀️'},{label:'cup',emoji:'🥤'}] },
+  { audio:'star', options:[{label:'car',emoji:'🚗',correct:true},{label:'book',emoji:'📖'},{label:'fish',emoji:'🐟'}] },
+  { audio:'bee', options:[{label:'tree',emoji:'🌳',correct:true},{label:'shoe',emoji:'👟'},{label:'hand',emoji:'✋'}] },
+  { audio:'dog', options:[{label:'frog',emoji:'🐸',correct:true},{label:'ball',emoji:'⚽'},{label:'milk',emoji:'🥛'}] },
+];
+const FIRSTSOUND = [
+  { audio:'sun', options:[{label:'sock',emoji:'🧦',correct:true},{label:'ball',emoji:'⚽'},{label:'leg',emoji:'🦵'}] },
+  { audio:'ball', options:[{label:'bat',emoji:'🦇',correct:true},{label:'sun',emoji:'☀️'},{label:'fan',emoji:'🪭'}] },
+  { audio:'moon', options:[{label:'map',emoji:'🗺️',correct:true},{label:'sun',emoji:'☀️'},{label:'dog',emoji:'🐶'}] },
+  { audio:'fish', options:[{label:'fan',emoji:'🪭',correct:true},{label:'cup',emoji:'🥤'},{label:'leg',emoji:'🦵'}] },
+];
+const SPELL = [
+  { word:'because', options:['because','becuase','becos'] },
+  { word:'friend', options:['friend','freind','frend'] },
+  { word:'said', options:['said','sed','sayd'] },
+  { word:'school', options:['school','skool','schwl'] },
+];
+const MAG_PAIRS = [[3,8],[7,4],[9,2],[5,6],[8,7],[2,3]];
+
+// ─── REUSABLE UI BITS ─────────────────────────────────────────────────────────
+function Speaker({ text, lang, className }){
+  return (
+    <button
+      type="button"
+      onClick={(e)=>{ e.stopPropagation(); speak(text, lang); }}
+      className={`w-10 h-10 rounded-full bg-accent/10 text-accent flex items-center justify-center flex-shrink-0 ${className||''}`}
+      aria-label="Read aloud"
+    ><Volume2 size={18} /></button>
+  );
+}
+
+function TaskIntro({ icon:Icon, title, text, lang, audioOn, onStart }){
+  useEffect(()=>{ if (audioOn) speak(title + '. ' + text, lang); /* eslint-disable-next-line */ }, []);
+  return (
+    <div className="card-elevated p-6 text-center animate-fadeIn">
+      {Icon && <div className="w-14 h-14 rounded-2xl bg-accent/10 text-accent flex items-center justify-center mx-auto mb-3"><Icon size={28} /></div>}
+      <h2 className="text-xl font-bold text-primary flex items-center justify-center gap-2">
+        {title}<Speaker text={title + '. ' + text} lang={lang} />
+      </h2>
+      <p className="text-muted mt-2">{text}</p>
+      <button className="btn-primary mt-5 inline-flex items-center gap-2" onClick={onStart}>
+        {lang==='HI' ? 'शुरू करो' : 'Start'} <ArrowRight size={16} />
+      </button>
+    </div>
+  );
+}
+
+// ─── GENERIC CHOICE-SEQUENCE TASK ───────────────────────────────────────────
+function ChoiceSequence({ intro, trials, lang, audioOn, onDone }){
+  const [started, setStarted] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [picked, setPicked] = useState(null);
+  const correctRef = useRef(0);
+  const rtRef = useRef([]);
+  const startRef = useRef(0);
+
+  const t = trials[idx];
+  useEffect(()=>{
+    if (started && t){ startRef.current = performance.now(); setPicked(null); if (audioOn) speak(t.audio || t.prompt, lang); }
+    // eslint-disable-next-line
+  }, [started, idx]);
+
+  if (!started){
+    return <TaskIntro icon={intro.icon} title={intro.title} text={intro.text} lang={lang} audioOn={audioOn} onStart={()=>setStarted(true)} />;
+  }
+
+  const choose = (opt, i) => {
+    if (picked !== null) return;
+    setPicked(i);
+    rtRef.current.push(performance.now() - startRef.current);
+    if (opt.correct) correctRef.current += 1;
+    setTimeout(()=>{
+      if (idx + 1 >= trials.length){
+        const accuracy = correctRef.current / trials.length;
+        onDone({ concern: clamp01(1 - accuracy), detail:{ accuracy: Math.round(accuracy*100)/100, meanRtMs: Math.round(mean(rtRef.current)) } });
+      } else {
+        setIdx(idx + 1);
+      }
+    }, 600);
   };
 
-  const handlePointerMove = (e) => {
-    if (!isDrawingRef.current || traceDone) return;
-    e.preventDefault();
-    const pos = getCanvasPos(e, canvasRef.current);
-    drawnRef.current.push(pos);
-    redrawCanvas(false);
+  const opts = t._shuffled || (t._shuffled = shuffle(t.options));
+  return (
+    <div className="animate-fadeIn">
+      <div className="card-elevated p-4 text-center mb-4">
+        <p className="text-lg font-semibold text-primary flex items-center justify-center gap-2">
+          {t.prompt}<Speaker text={t.audio || t.prompt} lang={lang} />
+        </p>
+        <p className="text-xs text-muted mt-1">{lang==='HI'?`सवाल ${idx+1} / ${trials.length}`:`${idx+1} of ${trials.length}`}</p>
+      </div>
+      <div className={`grid gap-3 ${t.twoCol ? 'grid-cols-2' : 'grid-cols-3'}`}>
+        {opts.map((opt, i) => {
+          let cls = 'bg-card border-gray-200';
+          if (picked === i) cls = opt.correct ? 'border-success bg-success/10' : 'border-warm bg-warm/10';
+          return (
+            <button key={i} disabled={picked!==null} onClick={()=>choose(opt,i)}
+              className={`rounded-2xl border-2 p-4 min-h-[96px] flex flex-col items-center justify-center gap-1 transition-all ${cls}`}>
+              {opt.emoji && <span style={{fontSize:'38px',lineHeight:1}}>{opt.emoji}</span>}
+              {opt.label && <span className="text-primary font-medium">{opt.label}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── NUMBER LINE TASK (numeracy, confirm) ────────────────────────────────────
+function NumberLineTask({ max, targets, lang, audioOn, onDone }){
+  const [started, setStarted] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [mark, setMark] = useState(null);
+  const errsRef = useRef([]);
+  const barRef = useRef(null);
+  const tg = targets[idx];
+
+  useEffect(()=>{ if (started && tg!=null && audioOn) speak((lang==='HI'?'रेखा पर ':'Where does ')+tg+(lang==='HI'?' कहाँ है?':' go?'), lang); /* eslint-disable-next-line */ }, [started, idx]);
+
+  if (!started) return <TaskIntro icon={Star} title={lang==='HI'?'यह कहाँ जाएगा?':'Where Does It Go?'} text={lang==='HI'?`रेखा 0 से ${max} तक है। संख्या जहाँ है वहाँ रेखा पर दबाओ।`:`The line goes 0 to ${max}. Tap where the number belongs.`} lang={lang} audioOn={audioOn} onStart={()=>setStarted(true)} />;
+
+  const onTap = (e) => {
+    if (mark !== null) return;
+    const rect = barRef.current.getBoundingClientRect();
+    const frac = clamp01((e.clientX - rect.left)/rect.width);
+    const err = Math.abs(frac*max - tg)/max;
+    errsRef.current.push(err);
+    setMark(frac);
+    setTimeout(()=>{
+      if (idx+1 >= targets.length){
+        onDone({ concern: clamp01(mean(errsRef.current)/0.20), detail:{ meanErrorPct: Math.round(mean(errsRef.current)*100) } });
+      } else { setMark(null); setIdx(idx+1); }
+    }, 750);
   };
 
-  const handlePointerUp = (e) => {
-    if (!isDrawingRef.current) return;
-    e.preventDefault();
-    isDrawingRef.current = false;
-    if (drawnRef.current.length < 5) return; // too short, ignore
+  return (
+    <div className="animate-fadeIn">
+      <div className="card-elevated p-4 text-center mb-6">
+        <p className="text-lg font-semibold text-primary flex items-center justify-center gap-2">
+          {lang==='HI'?'कहाँ है ':'Where does '}<span className="text-2xl text-accent">{tg}</span>{lang==='HI'?'?':' go?'}
+          <Speaker text={(lang==='HI'?'रेखा पर ':'Where does ')+tg+(lang==='HI'?' कहाँ है?':' go?')} lang={lang} />
+        </p>
+      </div>
+      <div className="card-elevated p-6">
+        <div ref={barRef} onClick={onTap} className="relative h-16 cursor-pointer">
+          <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-2 rounded-full bg-accent/30" />
+          <div className="absolute left-0 top-0 text-xs font-bold text-muted">0</div>
+          <div className="absolute right-0 top-0 text-xs font-bold text-muted">{max}</div>
+          {mark!==null && <div className="absolute -top-1 text-2xl -translate-x-1/2" style={{left:(mark*100)+'%'}}>📍</div>}
+        </div>
+        <p className="text-xs text-muted text-center mt-2">{lang==='HI'?'रेखा पर कहीं भी दबाओ':'Tap anywhere on the line'}</p>
+      </div>
+    </div>
+  );
+}
 
-    // Compute metrics for this trace
-    const metrics = computeTraceMetrics(drawnRef.current, pathPixels);
+// ─── DIGIT SPAN TASK (memory) ────────────────────────────────────────────────
+function DigitSpanTask({ lengths, expect, lang, audioOn, onDone }){
+  const [phase, setPhase] = useState('intro'); // intro | show | recall
+  const [shownDigit, setShownDigit] = useState('');
+  const [entered, setEntered] = useState([]);
+  const seqRef = useRef([]);
+  const liRef = useRef(0);
+  const bestRef = useRef(0);
+  const timerRef = useRef(null);
 
-    // Accumulate
-    const acc = traceMetricsRef.current;
-    acc.avgDeviation =
-      (acc.avgDeviation * acc.pathCount + metrics.avgDeviation) / (acc.pathCount + 1);
-    acc.jitterScore =
-      (acc.jitterScore * acc.pathCount + metrics.jitterScore) / (acc.pathCount + 1);
-    acc.completionPct =
-      (acc.completionPct * acc.pathCount + metrics.completionPct) / (acc.pathCount + 1);
-    acc.pathCount++;
+  const startLevel = () => {
+    if (liRef.current >= lengths.length){
+      onDone({ concern: clamp01((expect - bestRef.current)/2), detail:{ span: bestRef.current, expected: expect } });
+      return;
+    }
+    const len = lengths[liRef.current];
+    const seq = []; for (let i=0;i<len;i++) seq.push(randInt(10));
+    seqRef.current = seq;
+    setEntered([]);
+    setPhase('show');
+    let k = 0;
+    const step = () => {
+      if (k >= seq.length){ setShownDigit(''); setTimeout(()=>setPhase('recall'), 300); return; }
+      setShownDigit(String(seq[k]));
+      if (audioOn) speak(String(seq[k]), lang);
+      timerRef.current = setTimeout(()=>{ setShownDigit(''); timerRef.current = setTimeout(()=>{ k++; step(); }, 250); }, 850);
+    };
+    timerRef.current = setTimeout(step, 500);
+  };
+  useEffect(()=> ()=> clearTimeout(timerRef.current), []);
 
-    setTraceDone(true);
-    flashCompanion('happy', 1400);
-    redrawCanvas(true);
+  if (phase === 'intro'){
+    return <TaskIntro icon={Star} title={lang==='HI'?'संख्याएँ याद रखो':'Remember the Numbers'} text={lang==='HI'?'संख्याएँ एक-एक करके दिखेंगी। फिर उन्हें उसी क्रम में दबाओ।':'Numbers appear one at a time. Then tap them back in the same order.'} lang={lang} audioOn={audioOn} onStart={()=>{ liRef.current=0; bestRef.current=0; startLevel(); }} />;
+  }
+  if (phase === 'show'){
+    return (
+      <div className="card-elevated p-8 text-center animate-fadeIn">
+        <p className="text-muted mb-4">{lang==='HI'?'देखो और सुनो...':'Watch and listen...'}</p>
+        <div style={{fontSize:'84px',lineHeight:1.2,minHeight:120}} className="font-bold text-primary">{shownDigit}</div>
+      </div>
+    );
+  }
+  const submit = () => {
+    const ok = entered.length===seqRef.current.length && entered.every((v,i)=>v===seqRef.current[i]);
+    if (ok) bestRef.current = Math.max(bestRef.current, seqRef.current.length);
+    liRef.current += 1;
+    startLevel();
+  };
+  return (
+    <div className="animate-fadeIn">
+      <div className="card-elevated p-4 text-center mb-4">
+        <p className="text-lg font-semibold text-primary">{lang==='HI'?'उसी क्रम में दबाओ':'Tap them in order'}</p>
+        <div style={{fontSize:'34px',minHeight:46}} className="font-bold text-accent tracking-widest">{entered.join(' ')}</div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto">
+        {[1,2,3,4,5,6,7,8,9].map(n=>(
+          <button key={n} className="bg-card border-2 border-gray-200 rounded-xl text-2xl font-bold py-4 text-primary" onClick={()=>setEntered([...entered,n])}>{n}</button>
+        ))}
+        <button className="bg-card border-2 border-gray-200 rounded-xl text-xl py-4 text-muted" onClick={()=>setEntered(entered.slice(0,-1))}>⌫</button>
+        <button className="bg-card border-2 border-gray-200 rounded-xl text-2xl font-bold py-4 text-primary" onClick={()=>setEntered([...entered,0])}>0</button>
+        <button className="rounded-xl text-2xl py-4 bg-success text-white" onClick={submit}>✓</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── GO / NO-GO TASK (attention, CPT-style) ──────────────────────────────────
+function GoNoGoTask({ lang, audioOn, onDone }){
+  const [phase, setPhase] = useState('intro'); // intro | run
+  const [stim, setStim] = useState('');
+  const [count, setCount] = useState(0);
+  const N = 24;
+  const seqRef = useRef([]);
+  const tRef = useRef(0);
+  const curRef = useRef(null);
+  const respRef = useRef(false);
+  const shownAtRef = useRef(0);
+  const omRef = useRef(0), coRef = useRef(0), goRef = useRef(0), nogoRef = useRef(0), rtRef = useRef([]);
+  const timerRef = useRef(null);
+
+  useEffect(()=> ()=> clearTimeout(timerRef.current), []);
+
+  const begin = () => {
+    const seq = []; for (let i=0;i<N;i++) seq.push(Math.random()<0.28 ? 'nogo':'go');
+    seqRef.current = seq; tRef.current = 0;
+    omRef.current=0; coRef.current=0; goRef.current=0; nogoRef.current=0; rtRef.current=[];
+    setPhase('run');
+    timerRef.current = setTimeout(trial, 500);
+  };
+  const trial = () => {
+    const t = tRef.current;
+    if (t >= N){
+      const omRate = goRef.current ? omRef.current/goRef.current : 0;
+      const coRate = nogoRef.current ? coRef.current/nogoRef.current : 0;
+      const rtVar = clamp01(sd(rtRef.current)/400);
+      onDone({ concern: clamp01(0.5*omRate + 0.4*coRate + 0.1*rtVar),
+        detail:{ omissions:omRef.current, commissions:coRef.current, goTotal:goRef.current, nogoTotal:nogoRef.current, meanRtMs:Math.round(mean(rtRef.current)) } });
+      return;
+    }
+    const cur = seqRef.current[t];
+    curRef.current = cur; respRef.current = false; shownAtRef.current = performance.now();
+    if (cur==='go') goRef.current++; else nogoRef.current++;
+    setStim(cur==='go' ? '🦋' : '🕷️');
+    setCount(t+1);
+    timerRef.current = setTimeout(()=>{
+      if (curRef.current==='go' && !respRef.current) omRef.current++;
+      curRef.current = null; setStim('');
+      timerRef.current = setTimeout(()=>{ tRef.current = t+1; trial(); }, 350);
+    }, 950);
+  };
+  const tap = () => {
+    if (curRef.current==='go' && !respRef.current){ respRef.current=true; rtRef.current.push(performance.now()-shownAtRef.current); }
+    else if (curRef.current==='nogo' && !respRef.current){ respRef.current=true; coRef.current++; }
   };
 
-  const handleNextTrace = () => {
-    const nextIdx = tracePathIdx + 1;
-    if (nextIdx < SCREENING_TRACE_PATHS.length) {
-      setTracePathIdx(nextIdx);
-      setTraceDone(false);
-      drawnRef.current = [];
-    } else {
-      setAllTracesDone(true);
-      advanceActivity();
+  if (phase==='intro') return <TaskIntro icon={Star} title={lang==='HI'?'तितली पकड़ो':'Catch the Butterfly'} text={lang==='HI'?'🦋 तितली दिखे तो दबाओ। 🕷️ मकड़ी दिखे तो मत दबाओ।':'Tap when you see a 🦋 butterfly. Do NOT tap for a 🕷️ spider.'} lang={lang} audioOn={audioOn} onStart={begin} />;
+
+  return (
+    <div className="animate-fadeIn">
+      <div className="card-elevated p-4 text-center mb-4">
+        <p className="text-lg font-semibold text-primary">{lang==='HI'?'🦋 के लिए दबाओ, 🕷️ के लिए नहीं':'Tap for 🦋, not for 🕷️'}</p>
+        <p className="text-xs text-muted mt-1">{count} / {N}</p>
+      </div>
+      <button onClick={tap} className="w-full rounded-2xl bg-accent/5 border-2 border-accent/20 flex items-center justify-center select-none" style={{minHeight:200,fontSize:'90px'}}>
+        {stim}
+      </button>
+    </div>
+  );
+}
+
+// ─── MULTI-STEP TASK (organisation / executive function) ─────────────────────
+function MultiStepTask({ lang, audioOn, onDone }){
+  const ITEMS = [
+    { say:'Tap the red circle, then the yellow star', sayHI:'पहले लाल गोला दबाओ, फिर पीला तारा', order:['red-circle','yellow-star'] },
+    { say:'Tap the blue square, then the green circle', sayHI:'पहले नीला चौकोर दबाओ, फिर हरा गोला', order:['blue-square','green-circle'] },
+  ];
+  const SHAPES = [
+    { id:'red-circle', color:'#D64545', shape:'circle' },
+    { id:'yellow-star', color:'#D9A300', shape:'star' },
+    { id:'blue-square', color:'#2E75B6', shape:'square' },
+    { id:'green-circle', color:'#2E8B57', shape:'circle' },
+  ];
+  const [started, setStarted] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [done, setDone] = useState([]);
+  const tapsRef = useRef([]);
+  const correctRef = useRef(0);
+  const item = ITEMS[idx];
+
+  useEffect(()=>{ if (started && item && audioOn) speak(lang==='HI'?item.sayHI:item.say, lang); /* eslint-disable-next-line */ }, [started, idx]);
+
+  if (!started) return <TaskIntro icon={Star} title={lang==='HI'?'कदमों का पालन करो':'Follow the Steps'} text={lang==='HI'?'निर्देश सुनो, फिर आकृतियों को उसी क्रम में दबाओ।':'Listen to the instruction, then tap the shapes in that order.'} lang={lang} audioOn={audioOn} onStart={()=>setStarted(true)} />;
+
+  const drawShape = (s) => {
+    const base = { width:56, height:56, background:s.color, display:'flex' };
+    if (s.shape==='circle') base.borderRadius='50%';
+    else if (s.shape==='square') base.borderRadius='10px';
+    else if (s.shape==='star'){ return <span style={{fontSize:56, color:s.color, lineHeight:1}}>★</span>; }
+    return <div style={base} />;
+  };
+  const tap = (s) => {
+    if (done.includes(s.id)) return;
+    const nd = [...done, s.id]; setDone(nd); tapsRef.current.push(s.id);
+    if (tapsRef.current.length === item.order.length){
+      const ok = tapsRef.current.every((v,i)=>v===item.order[i]);
+      if (ok) correctRef.current += 1;
+      setTimeout(()=>{
+        if (idx+1 >= ITEMS.length){ onDone({ concern: clamp01(1 - correctRef.current/ITEMS.length), detail:{ accuracy: correctRef.current/ITEMS.length } }); }
+        else { tapsRef.current=[]; setDone([]); setIdx(idx+1); }
+      }, 800);
     }
   };
+  return (
+    <div className="animate-fadeIn">
+      <div className="card-elevated p-4 text-center mb-4">
+        <p className="text-lg font-semibold text-primary flex items-center justify-center gap-2">
+          {lang==='HI'?'सुनो, फिर क्रम में दबाओ':'Listen, then tap in order'}<Speaker text={lang==='HI'?item.sayHI:item.say} lang={lang} />
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-4 justify-center card-elevated p-6">
+        {shuffle(SHAPES).map(s=>(
+          <button key={s.id} onClick={()=>tap(s)} style={{opacity: done.includes(s.id)?0.4:1}} className="p-2">{drawShape(s)}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-  // ══════════════════════════════════════════════════════════════════════════════
-  // COMPLETION - Derive profile and store results
-  // ══════════════════════════════════════════════════════════════════════════════
-  const [profileResult, setProfileResult] = useState(null);
+// ─── SCORING ───────────────────────────────────────────────────────────────
+const levelFromConcern = (c) => (c > 0.6 ? 'high' : (c > TYPICAL_THRESHOLD ? 'some' : 'low'));
 
-  useEffect(() => {
-    if (activityIndex === 3 && !profileResult) {
-      const traceData = {
-        avgDeviation: traceMetricsRef.current.avgDeviation,
-        jitterScore: traceMetricsRef.current.jitterScore,
-        completionPct: traceMetricsRef.current.completionPct,
-      };
-      const result = deriveProfile(
-        rhymeDataRef.current,
-        pileDataRef.current,
-        traceData,
-        appState.isDemoMode
-      );
-      setProfileResult(result);
+function buildProfile(results){
+  const byDomain = {};
+  Object.keys(results).forEach(id=>{
+    const r = results[id]; if (r.concern==null) return;
+    (byDomain[r.domain] = byDomain[r.domain] || []).push(r.concern);
+  });
+  const supportProfile = { reading:'low', writing:'low', numeracy:'low', attention:'low', memory:'low', organisation:'low' };
+  const concerns = {};
+  Object.keys(byDomain).forEach(d=>{ const c = mean(byDomain[d]); concerns[d]=c; supportProfile[d] = levelFromConcern(c); });
+  let primary = 'reading', best = -1;
+  Object.keys(concerns).forEach(d=>{ if (concerns[d] > best){ best = concerns[d]; primary = d; } });
+  const highs = Object.values(supportProfile).filter(v=>v==='high').length;
+  const tier = highs >= 2 ? 3 : (highs >= 1 ? 2 : 1);
+  return { supportProfile, primarySupportArea: primary, tier, concerns };
+}
 
-      // Compute detailed telemetry for teacher dashboard
-      const rhymeD = rhymeDataRef.current;
-      const pileD = pileDataRef.current;
-      const avgRhymeTime = rhymeD.responseTimes.length > 0
-        ? rhymeD.responseTimes.reduce((a, b) => a + b, 0) / rhymeD.responseTimes.length
-        : 0;
-      const avgPileTime = pileD.responseTimes.length > 0
-        ? pileD.responseTimes.reduce((a, b) => a + b, 0) / pileD.responseTimes.length
-        : 0;
-      const rhymeErrorRate = rhymeD.totalRounds > 0
-        ? rhymeD.incorrectRounds / rhymeD.totalRounds
-        : 0;
-      const pileErrorRate = pileD.totalRounds > 0
-        ? pileD.incorrectRounds / pileD.totalRounds
-        : 0;
-      const closeNumberErrorRate = pileD.hardRounds > 0
-        ? pileD.hardRoundErrors / pileD.hardRounds
-        : 0;
+// ─── TASK REGISTRY (render takes (onDone, audioOn)) ──────────────────────────
+function buildTasks(lang, gradeBand){
+  const numMax = gradeBand==='early' ? 10 : (gradeBand==='upper' ? 100 : 20);
+  const nlTargets = numMax<=10 ? [3,7,9] : (numMax<=20 ? [6,13,18] : [22,57,84]);
+  const spanLens = gradeBand==='early' ? [3,4] : (gradeBand==='upper' ? [4,5,6] : [3,4,5]);
+  const spanExpect = gradeBand==='early' ? 3 : (gradeBand==='upper' ? 5 : 4);
 
-      const telemetryData = {
-        // Reading & Sound Tracking
-        rhymingSpeed: Math.round(avgRhymeTime / 1000 * 10) / 10,
-        audioHelpUsed: rhymeD.audioUseCount,
-        rhymingAccuracy: Math.round((1 - rhymeErrorRate) * 100),
-        // Number Sense
-        countingSpeed: Math.round(avgPileTime / 1000 * 10) / 10,
-        countingAccuracy: Math.round((1 - pileErrorRate) * 100),
-        closeNumberConfusion: closeNumberErrorRate > 0.5,
-        // Motor Control
-        lineSteadiness: traceData.jitterScore > 0.5 ? 'Very Shaky' : traceData.jitterScore > 0.25 ? 'Shaky' : 'Steady',
-        pathAccuracy: Math.round(traceData.avgDeviation),
-      };
+  return [
+    { id:'rhyme', domain:'reading', render:(onDone, audioOn)=>(
+      <ChoiceSequence key="rhyme" lang={lang} audioOn={audioOn} onDone={onDone}
+        intro={{ icon:Star, title: lang==='HI'?'ध्वनि मिलान':'Sound Match', text: lang==='HI'?'शब्द सुनो, फिर वह तस्वीर चुनो जो अंत में उसी तरह लगती है।':'Listen, then tap the picture whose name sounds the same at the end.' }}
+        trials={RHYME.map(r=>({ prompt: (lang==='HI'?'किसकी तुक मिलती है ':'Which rhymes with ')+r.audio.toUpperCase()+'?', audio:r.audio, options:r.options }))} />
+    )},
+    { id:'firstsound', domain:'reading', render:(onDone, audioOn)=>(
+      <ChoiceSequence key="firstsound" lang={lang} audioOn={audioOn} onDone={onDone}
+        intro={{ icon:Star, title: lang==='HI'?'पहली ध्वनि':'First Sound', text: lang==='HI'?'शब्द सुनो, फिर वह तस्वीर चुनो जो उसी पहली ध्वनि से शुरू होती है।':'Listen, then tap the picture that starts with the same first sound.' }}
+        trials={FIRSTSOUND.map(r=>({ prompt: (lang==='HI'?'किसकी पहली ध्वनि वैसी ही है ':'Same first sound as ')+r.audio.toUpperCase()+'?', audio:r.audio, options:r.options }))} />
+    )},
+    { id:'magnitude', domain:'numeracy', render:(onDone, audioOn)=>(
+      <ChoiceSequence key="magnitude" lang={lang} audioOn={audioOn} onDone={onDone}
+        intro={{ icon:Star, title: lang==='HI'?'बड़ी संख्या':'Bigger Number', text: lang==='HI'?'दो संख्याओं में से जो बड़ी है उसे दबाओ।':'Tap the number that is bigger.' }}
+        trials={MAG_PAIRS.map(p=>({ prompt: lang==='HI'?'कौन सी बड़ी है?':'Which is bigger?', audio: lang==='HI'?'बड़ी संख्या दबाओ':'Tap the bigger number', twoCol:true, options:[{label:String(p[0]),correct:p[0]>p[1]},{label:String(p[1]),correct:p[1]>p[0]}] }))} />
+    )},
+    { id:'numline', domain:'numeracy', render:(onDone, audioOn)=>(
+      <NumberLineTask key="numline" max={numMax} targets={nlTargets} lang={lang} audioOn={audioOn} onDone={onDone} />
+    )},
+    { id:'digit', domain:'memory', render:(onDone, audioOn)=>(
+      <DigitSpanTask key="digit" lengths={spanLens} expect={spanExpect} lang={lang} audioOn={audioOn} onDone={onDone} />
+    )},
+    { id:'gonogo', domain:'attention', render:(onDone, audioOn)=>(
+      <GoNoGoTask key="gonogo" lang={lang} audioOn={audioOn} onDone={onDone} />
+    )},
+    { id:'trace', domain:'writing', render:(onDone, audioOn)=>(
+      <TracePathTask key="trace" lang={lang} audioOn={audioOn} onDone={onDone} />
+    )},
+    { id:'spelling', domain:'writing', render:(onDone, audioOn)=>(
+      <ChoiceSequence key="spelling" lang={lang} audioOn={audioOn} onDone={onDone}
+        intro={{ icon:Star, title: lang==='HI'?'सही वर्तनी':'Find the Spelling', text: lang==='HI'?'शब्द सुनो, फिर वह डिब्बा दबाओ जिसमें वह सही लिखा है।':'Listen, then tap the box where it is spelled correctly.' }}
+        trials={SPELL.map(s=>({ prompt: lang==='HI'?'कौन सी वर्तनी सही है?':'Which spelling is correct?', audio:s.word, options:s.options.map(o=>({label:o,correct:o===s.word})) }))} />
+    )},
+    { id:'multistep', domain:'organisation', render:(onDone, audioOn)=>(
+      <MultiStepTask key="multistep" lang={lang} audioOn={audioOn} onDone={onDone} />
+    )},
+  ];
+}
 
-      // Store in app state with telemetry
-      const supportMapping = toSupportProfile(result);
-      updateState({
-        sldType: result.detectedType,
-        ...supportMapping,
-        screeningResults: {
-          dyslexiaScore: Math.round(result.dyslexiaScore * 100) / 100,
-          dyscalculiaScore: Math.round(result.dyscalculiaScore * 100) / 100,
-          dysgraphiaScore: Math.round(result.dysgraphiaScore * 100) / 100,
-          detectedType: result.detectedType,
-          telemetry: telemetryData,
-        },
-      });
+// ─── MAIN CONTROLLER ─────────────────────────────────────────────────────────
+const Screening = () => {
+  const { appState, updateState } = useApp();
+  const navigate = useNavigate();
+  const lang = appState.language || 'EN';
+  const S = STRINGS[lang] || STRINGS.EN;
+  const gradeBand = (appState.studentClass <= 2) ? 'early' : (appState.studentClass >= 6 ? 'upper' : 'mid');
 
-      // Save to Firebase using the deterministic student ID set during Onboarding
-      const saveToFirebase = async () => {
-        try {
-          const studentId = appState.studentId || appState.firebaseStudentId;
-          if (!studentId) {
-            console.warn('[Screening] No studentId in appState — skipping Firebase save.');
-            return;
-          }
-          const maxScore = Math.max(result.dyslexiaScore, result.dyscalculiaScore, result.dysgraphiaScore);
-          await saveStudentToFirebase({
-            id: studentId,
-            name: appState.studentName || 'Student',
-            class: appState.studentClass || 4,
-            classCode: (appState.classCode || 'SCH001').toUpperCase(),
-            school: 'Saath-i App User',
-            sldType: result.detectedType,
-            severity: maxScore > 0.6 ? 'moderate' : 'mild',
-            ...toSupportProfile(result),
-            language: appState.language,
-            lastActive: 'Just now',
-            streakDays: 1,
-            status: 'green',
-            companion: appState.companion,
-            pin: appState.studentPin || null, // stored for PIN-based login
-            masteryMap: {
-              'Sound Matching': result.dyslexiaScore < 0.3 ? 'mastered' : result.dyslexiaScore < 0.6 ? 'in_progress' : 'struggling',
-              'Number Sense': result.dyscalculiaScore < 0.3 ? 'mastered' : result.dyscalculiaScore < 0.6 ? 'in_progress' : 'struggling',
-              'Motor Control': result.dysgraphiaScore < 0.3 ? 'mastered' : result.dysgraphiaScore < 0.6 ? 'in_progress' : 'struggling',
-            },
-            errorPatterns: [],
-            weeklyStats: { timeSpent: '0m', activitiesCompleted: 0, helpRequests: 0 },
-            aiSuggestion: '',
-            progressHistory: [0],
-            teacherObservations: [],
-            specialistNotes: [],
-            screeningResults: {
-              dyslexiaScore: Math.round(result.dyslexiaScore * 100) / 100,
-              dyscalculiaScore: Math.round(result.dyscalculiaScore * 100) / 100,
-              dysgraphiaScore: Math.round(result.dysgraphiaScore * 100) / 100,
-              detectedType: result.detectedType,
-            },
-            telemetry: telemetryData,
-          });
-          // firebaseStudentId is already set in appState from Onboarding — just confirm
-          updateState({ firebaseStudentId: studentId, streakDays: 1 });
-        } catch (err) {
-          console.error('[Screening] Firebase save failed:', err);
-        }
-      };
-      saveToFirebase();
+  const [audioOn, setAudioOn] = useState(true);
+  const [taskIndex, setTaskIndex] = useState(0);
+  const [finished, setFinished] = useState(false);
+  const resultsRef = useRef({});
+  const tasks = useRef(buildTasks(lang, gradeBand)).current;
 
-      // Fire confetti
-      setTimeout(() => {
-        confetti({
-          particleCount: 80,
-          spread: 60,
-          origin: { y: 0.7 },
-          colors: ['#2E75B6', '#E87722', '#2E8B57'],
+  useEffect(()=> ()=> stopSpeak(), []);
+
+  const handleTaskDone = (metrics) => {
+    const task = tasks[taskIndex];
+    resultsRef.current[task.id] = { domain: task.domain, concern: metrics.concern, detail: metrics.detail };
+    stopSpeak();
+    if (taskIndex + 1 >= tasks.length){ finalize(); }
+    else { setTaskIndex(taskIndex + 1); }
+  };
+
+  async function finalize(){
+    const profile = buildProfile(resultsRef.current);
+    const motorConcern = resultsRef.current.trace ? resultsRef.current.trace.concern : null;
+    setFinished(true);
+    stopSpeak();
+    setTimeout(()=>{ try{ confetti({ particleCount:90, spread:70, origin:{y:0.7}, colors:['#2E75B6','#E87722','#2E8B57'] }); }catch(e){} }, 300);
+
+    // Keep results in local state for the app, but NEVER show them to the student.
+    updateState({
+      supportProfile: profile.supportProfile,
+      primarySupportArea: profile.primarySupportArea,
+      tier: profile.tier,
+      motorConcern,
+      screeningStatus: 'awaiting_observation',
+    });
+
+    // Persist to Firebase, tagged with the class code, for the teacher portal.
+    try {
+      const studentId = appState.studentId || appState.firebaseStudentId;
+      if (studentId){
+        const screeningResults = {
+          source: 'student_cognitive',
+          supportProfile: profile.supportProfile,
+          primarySupportArea: profile.primarySupportArea,
+          tier: profile.tier,
+          concerns: profile.concerns,
+          motorConcern,
+        };
+        await saveStudentToFirebase({
+          id: studentId,
+          name: appState.studentName || 'Student',
+          class: appState.studentClass || 4,
+          classCode: (appState.classCode || 'SCH001').toUpperCase(),
+          supportProfile: profile.supportProfile,
+          primarySupportArea: profile.primarySupportArea,
+          tier: profile.tier,
+          motorConcern,
+          screeningStatus: 'awaiting_observation',
+          companion: appState.companion || null,
         });
-      }, 400);
-    }
-  }, [activityIndex]);
+        await saveScreeningResults(studentId, screeningResults, resultsRef.current);
+      }
+    } catch (e) { /* offline-safe: local state already updated */ }
+  }
 
-  const handleComplete = () => {
-    navigate('/home');
-  };
+  const progress = finished ? 1 : (taskIndex / tasks.length);
 
-  // ══════════════════════════════════════════════════════════════════════════════
-  // RENDER
-  // ══════════════════════════════════════════════════════════════════════════════
   return (
     <Layout
-      title={S.screeningTitle}
+      title={S.screeningTitle || (lang==='HI'?'खेल का समय':'Game Time')}
       showBack={false}
       showCompanion
-      pageContext="Completing their initial screening games"
-      companionState={companionState}
+      pageContext="Playing short screening games. Never show the child any result, score, or label."
+      companionState={finished ? 'happy' : 'encouraging'}
       lang={lang}
-      setLanguage={(l) => updateState({ language: l })}
+      setLanguage={(l)=>updateState({ language:l })}
       companion={appState.companion}
       streak={appState.streakDays}
     >
-      <div
-        className={`max-w-md mx-auto pb-24 transition-opacity duration-500 ${
-          transitioning ? 'opacity-0' : 'opacity-100'
-        }`}
-      >
-        {/* ── Step indicator dots ─────────────────────────────────────────── */}
-        {activityIndex < 3 && (
-          <div className="flex items-center justify-center gap-2 mb-6">
-            {Array.from({ length: TOTAL_ACTIVITIES }).map((_, i) => (
-              <div
-                key={i}
-                className={`rounded-full transition-all duration-300 ${
-                  i === activityIndex
-                    ? 'w-8 h-3 bg-accent'
-                    : i < activityIndex
-                    ? 'w-3 h-3 bg-accent/50'
-                    : 'w-3 h-3 bg-gray-200'
-                }`}
-                aria-label={`Activity ${i + 1} ${
-                  i < activityIndex ? 'completed' : i === activityIndex ? 'current' : 'upcoming'
-                }`}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            ACTIVITY 1 - Word Sound Game (Dyslexia proxy)
-        ═══════════════════════════════════════════════════════════════════ */}
-        {activityIndex === 0 && (
-          <div className="space-y-5 animate-fadeIn">
-            {/* Instruction card */}
-            <div className="bg-card rounded-xl border border-gray-100 shadow-sm p-4 text-center">
-              <div className="flex items-center justify-center gap-2 mb-1">
-                <Volume2 size={20} className="text-accent" />
-                <p className="text-lg font-semibold text-primary">
-                  {lang === 'HI'
-                    ? 'दो ताल मिलाने वाले शब्द चुनें'
-                    : 'Select the two words that rhyme'}
-                </p>
-              </div>
-              <p className="text-sm text-muted">
-                {lang === 'HI'
-                  ? `दौर ${rhymeRound + 1} / ${SCREENING_WORD_SETS.length}`
-                  : `Round ${rhymeRound + 1} of ${SCREENING_WORD_SETS.length}`}
-              </p>
+      <div className="max-w-md mx-auto px-4 py-5 pb-28">
+        {!finished && (
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-accent to-calm transition-all" style={{ width: Math.round(progress*100)+'%' }} />
             </div>
-
-            {/* Word cards - 2x2 grid */}
-            <div className="grid grid-cols-2 gap-3">
-              {shuffledRhymeIndices.map((idx) => {
-                const word = SCREENING_WORD_SETS[rhymeRound].words[idx];
-                const isSelected = rhymeSelected.includes(idx);
-                const isCorrectReveal = rhymeCorrectPair.includes(idx);
-                const isFeedbackCorrect =
-                  rhymeFeedback === 'correct' &&
-                  SCREENING_WORD_SETS[rhymeRound].rhymePair.includes(idx);
-
-                let borderClass = 'border-gray-200 bg-card';
-                if (isFeedbackCorrect || isCorrectReveal) {
-                  borderClass = 'border-green-400 bg-green-50 scale-[1.02]';
-                } else if (
-                  rhymeFeedback === 'incorrect' &&
-                  rhymeSelected.includes(idx) &&
-                  !isCorrectReveal
-                ) {
-                  borderClass = 'border-warm/60 bg-orange-50/50';
-                } else if (isSelected) {
-                  borderClass = 'border-accent bg-blue-50 shadow-sm scale-[1.02]';
-                }
-
-                return (
-                  <button
-                    key={`${rhymeRound}-${word}`}
-                    onClick={() => handleRhymeTap(idx)}
-                    className={`rounded-xl border-2 p-4 flex flex-col items-center gap-3 min-h-[100px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent ${borderClass}`}
-                    aria-label={`${word} - tap to select`}
-                    aria-pressed={isSelected}
-                    disabled={!!rhymeFeedback}
-                  >
-                    <span className="text-xl font-bold text-primary tracking-wide">
-                      {word}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAudioPlay(word);
-                      }}
-                      className="p-2 rounded-full bg-surface hover:bg-accent/10 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
-                      aria-label={`Listen to ${word}`}
-                      tabIndex={-1}
-                    >
-                      <Volume2 size={18} className="text-accent" />
-                    </button>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Feedback - correct */}
-            {rhymeFeedback === 'correct' && (
-              <div
-                className="bg-green-50 border border-green-200 rounded-xl p-3 text-center animate-fadeIn"
-                role="status"
-                aria-live="polite"
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <CheckCircle2 size={20} className="text-green-600" />
-                  <p className="text-green-700 font-semibold text-lg">
-                    {lang === 'HI' ? 'बहुत अच्छा!' : 'Great listening!'}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Feedback - incorrect (encouraging, no "wrong") */}
-            {rhymeFeedback === 'incorrect' && (
-              <div
-                className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center animate-fadeIn"
-                role="status"
-                aria-live="polite"
-              >
-                <p className="text-warm font-semibold text-base">
-                  {lang === 'HI'
-                    ? 'ये शब्द ताल मिलाते हैं - ध्यान से सुनो!'
-                    : 'These words rhyme - listen closely!'}
-                </p>
-              </div>
-            )}
-
-            {/* Audio hint */}
-            <p className="text-sm text-muted text-center flex items-center justify-center gap-1.5">
-              <Volume2 size={14} className="text-muted" />
-              {lang === 'HI'
-                ? 'ध्वनि सुनने के लिए स्पीकर बटन दबाएं'
-                : 'Tap the speaker icon on any word to hear it'}
-            </p>
-          </div>
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            ACTIVITY 2 - Which Group Has More? (Dyscalculia proxy)
-        ═══════════════════════════════════════════════════════════════════ */}
-        {activityIndex === 1 && (
-          <div className="space-y-5 animate-fadeIn">
-            {/* Instruction card */}
-            <div className="bg-card rounded-xl border border-gray-100 shadow-sm p-4 text-center">
-              <div className="flex items-center justify-center gap-2 mb-1">
-                <Target size={20} className="text-accent" />
-                <p className="text-lg font-semibold text-primary">
-                  {lang === 'HI'
-                    ? 'किस समूह में ज़्यादा हैं?'
-                    : 'Which group has more?'}
-                </p>
-              </div>
-              <p className="text-sm text-muted">
-                {lang === 'HI'
-                  ? `दौर ${pileRound + 1} / ${SCREENING_PILE_ROUNDS.length}`
-                  : `Round ${pileRound + 1} of ${SCREENING_PILE_ROUNDS.length}`}
-              </p>
-            </div>
-
-            {/* Two groups side by side */}
-            <div className="grid grid-cols-2 gap-4">
-              {['left', 'right'].map((side) => {
-                const { displayLeft, displayRight, correctDisplaySide } =
-                  getPileValues(pileRound);
-                const count = side === 'left' ? displayLeft : displayRight;
-                const isChosen = pileChosen === side;
-                const isCorrectSide = side === correctDisplaySide;
-                const showCorrectHighlight =
-                  pileFeedback && isCorrectSide;
-                const showIncorrectHighlight =
-                  pileFeedback === 'incorrect' && isChosen && !isCorrectSide;
-
-                let borderClass = 'border-gray-200 bg-card hover:border-accent/40';
-                if (showCorrectHighlight) {
-                  borderClass = 'border-green-400 bg-green-50 shadow-md scale-[1.03]';
-                } else if (showIncorrectHighlight) {
-                  borderClass = 'border-warm/50 bg-orange-50/40';
-                } else if (isChosen && pileFeedback === 'correct') {
-                  borderClass = 'border-green-400 bg-green-50 shadow-md scale-[1.03]';
-                }
-
-                return (
-                  <button
-                    key={`${pileRound}-${side}`}
-                    onClick={() => handlePileTap(side)}
-                    className={`rounded-xl border-2 p-4 flex flex-col items-center justify-center gap-3 min-h-[160px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent ${borderClass}`}
-                    aria-label={`${side} group - tap to choose`}
-                    disabled={!!pileChosen}
-                  >
-                    {/* Dot grid - styled circles, NOT emojis */}
-                    <div
-                      className="flex flex-wrap justify-center gap-1.5 max-w-[120px]"
-                      aria-hidden="true"
-                    >
-                      {Array.from({ length: count }).map((_, i) => (
-                        <div
-                          key={i}
-                          className="bg-accent rounded-full w-6 h-6 flex-shrink-0"
-                        />
-                      ))}
-                    </div>
-                    {/* Accessible count for screen readers */}
-                    <span className="sr-only">{count} circles</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Feedback */}
-            {pileFeedback === 'correct' && (
-              <div
-                className="bg-green-50 border border-green-200 rounded-xl p-3 text-center animate-fadeIn"
-                role="status"
-                aria-live="polite"
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <CheckCircle2 size={20} className="text-green-600" />
-                  <p className="text-green-700 font-semibold text-lg">
-                    {lang === 'HI' ? 'शाबाश!' : 'Well spotted!'}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {pileFeedback === 'incorrect' && (
-              <div
-                className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center animate-fadeIn"
-                role="status"
-                aria-live="polite"
-              >
-                <p className="text-warm font-semibold text-base">
-                  {lang === 'HI'
-                    ? 'ध्यान से देखो - कौन सा समूह बड़ा है!'
-                    : 'Look closely - which group has more!'}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            ACTIVITY 3 - Trace the Path (Dysgraphia proxy)
-        ═══════════════════════════════════════════════════════════════════ */}
-        {activityIndex === 2 && (
-          <div className="space-y-4 animate-fadeIn">
-            {/* Instruction card */}
-            <div className="bg-card rounded-xl border border-gray-100 shadow-sm p-4 text-center">
-              <div className="flex items-center justify-center gap-2 mb-1">
-                <Hand size={20} className="text-accent" />
-                <p className="text-lg font-semibold text-primary">
-                  {lang === 'HI'
-                    ? 'बिन्दुओं के रास्ते पर उंगली चलाएं'
-                    : 'Trace along the dotted path'}
-                </p>
-              </div>
-              <p className="text-sm text-muted">
-                {lang === 'HI'
-                  ? `पथ ${tracePathIdx + 1} / ${SCREENING_TRACE_PATHS.length}`
-                  : `Path ${tracePathIdx + 1} of ${SCREENING_TRACE_PATHS.length}`}
-              </p>
-            </div>
-
-            {/* Canvas */}
-            <div className="rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm bg-white">
-              <canvas
-                ref={canvasRef}
-                width={CANVAS_W}
-                height={CANVAS_H}
-                className="w-full block touch-none"
-                style={{ cursor: traceDone ? 'default' : 'crosshair' }}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerLeave={handlePointerUp}
-                aria-label={
-                  lang === 'HI'
-                    ? 'शुरू से अंत तक बिन्दुओं के रास्ते पर उंगली चलाएं'
-                    : 'Trace the dotted path from start to end'
-                }
-                role="img"
-              />
-            </div>
-
-            {/* Trace feedback */}
-            {traceDone && (
-              <div
-                className="bg-green-50 border border-green-200 rounded-xl p-4 text-center animate-fadeIn"
-                role="status"
-                aria-live="polite"
-              >
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <CheckCircle2 size={20} className="text-green-600" />
-                  <p className="text-green-700 font-semibold text-lg">
-                    {lang === 'HI' ? 'बहुत अच्छा!' : 'Nice tracing!'}
-                  </p>
-                </div>
-                <p className="text-sm text-muted">
-                  {lang === 'HI'
-                    ? 'हरा = सही रास्ते पर, पीला = थोड़ा बाहर, नारंगी = रास्ते से दूर'
-                    : 'Green = on path, Yellow = slightly off, Orange = off path'}
-                </p>
-              </div>
-            )}
-
-            {/* Continue / next trace button */}
-            {traceDone && (
-              <button
-                onClick={handleNextTrace}
-                className="w-full bg-accent text-white font-semibold py-3.5 px-6 rounded-xl min-h-[52px] hover:bg-accent/90 transition-colors shadow-sm text-lg focus:outline-none focus:ring-2 focus:ring-accent flex items-center justify-center gap-2"
-                aria-label={
-                  tracePathIdx + 1 < SCREENING_TRACE_PATHS.length
-                    ? (lang === 'HI' ? 'अगला पथ' : 'Next path')
-                    : S.continue
-                }
-              >
-                {tracePathIdx + 1 < SCREENING_TRACE_PATHS.length
-                  ? (lang === 'HI' ? 'अगला पथ' : 'Next Path')
-                  : S.continue}
-                <ArrowRight size={18} />
-              </button>
-            )}
-
-            {!traceDone && (
-              <p className="text-sm text-muted text-center flex items-center justify-center gap-1.5">
-                <Hand size={14} className="text-muted" />
-                {lang === 'HI'
-                  ? 'शुरू से अंत तक उंगली या माउस से रेखा खींचें'
-                  : 'Draw from START to END with your finger or mouse'}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            COMPLETION SCREEN
-        ═══════════════════════════════════════════════════════════════════ */}
-        {activityIndex === 3 && (
-          <div className="flex flex-col items-center text-center py-6 space-y-5 animate-fadeIn">
-            {/* Success icon */}
-            <div className="w-20 h-20 bg-accent/10 rounded-full flex items-center justify-center">
-              <Sparkles size={36} className="text-accent" />
-            </div>
-
-            {/* Title */}
-            <div>
-              <h2 className="text-2xl font-bold text-primary">
-                {S.screeningComplete}
-              </h2>
-              <p className="text-muted mt-1 text-base font-medium">
-                {appState.companion?.nickname || 'Gyaan'}
-                {lang === 'HI' ? ' बहुत खुश है!' : ' is proud of you!'}
-              </p>
-            </div>
-
-            {/* Profile reveal card - child-friendly, no clinical labels */}
-            {profileResult && (
-              <div className="bg-card border border-gray-100 rounded-xl p-5 w-full max-w-sm shadow-sm space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-accent/10 rounded-full flex items-center justify-center flex-shrink-0">
-                    <CheckCircle2 size={22} className="text-accent" />
-                  </div>
-                  <p className="text-lg font-semibold text-primary text-left">
-                    {PROFILE_MESSAGES[profileResult.detectedType]?.[lang] ||
-                      PROFILE_MESSAGES.dyslexia[lang]}
-                  </p>
-                </div>
-
-                {/* Visual strength indicator - subtle bars, no numbers */}
-                <div className="space-y-2 pt-2">
-                  <ProfileBar
-                    label={lang === 'HI' ? 'सुनना और ध्वनि' : 'Listening & Sounds'}
-                    value={profileResult.dyslexiaScore}
-                    isDetected={profileResult.detectedType === 'dyslexia'}
-                  />
-                  <ProfileBar
-                    label={lang === 'HI' ? 'वस्तुएं और चित्र' : 'Objects & Visuals'}
-                    value={profileResult.dyscalculiaScore}
-                    isDetected={profileResult.detectedType === 'dyscalculia'}
-                  />
-                  <ProfileBar
-                    label={lang === 'HI' ? 'बोलना और बनाना' : 'Speaking & Drawing'}
-                    value={profileResult.dysgraphiaScore}
-                    isDetected={profileResult.detectedType === 'dysgraphia'}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* What's next */}
-            <div className="bg-surface border border-gray-100 rounded-xl p-4 w-full max-w-sm space-y-2">
-              <p className="text-sm font-semibold text-primary text-center">
-                {lang === 'HI' ? 'आपका सफ़र शुरू होता है' : 'Your journey begins with'}
-              </p>
-              <div className="space-y-1.5">
-                {[
-                  {
-                    icon: <Play size={16} className="text-accent" />,
-                    text: lang === 'HI' ? 'आपके लिए बने खास कार्यक्रम' : 'Activities designed for you',
-                  },
-                  {
-                    icon: <Target size={16} className="text-accent" />,
-                    text: lang === 'HI' ? 'हर दिन नई चुनौतियां' : 'New challenges every day',
-                  },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-2.5 text-sm text-muted">
-                    {item.icon}
-                    <span>{item.text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* CTA */}
             <button
-              onClick={handleComplete}
-              className="w-full bg-accent text-white font-bold py-4 px-6 rounded-xl min-h-[56px] text-xl hover:bg-accent/90 transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-accent active:scale-[0.98] flex items-center justify-center gap-2"
-              aria-label={lang === 'HI' ? 'सीखना शुरू करें' : "Let's Start Learning!"}
-            >
-              {lang === 'HI' ? 'सीखना शुरू करें' : "Let's Start Learning!"}
-              <ArrowRight size={20} />
+              onClick={()=>{ const v=!audioOn; setAudioOn(v); if(!v) stopSpeak(); }}
+              className="w-10 h-10 rounded-full bg-card border border-gray-200 flex items-center justify-center text-primary"
+              aria-label={audioOn ? 'Mute audio' : 'Unmute audio'}
+            >{audioOn ? <Volume2 size={18}/> : <VolumeX size={18}/>}</button>
+          </div>
+        )}
+
+        {!finished ? (
+          tasks[taskIndex].render(handleTaskDone, audioOn)
+        ) : (
+          <div className="card-elevated p-8 text-center animate-fadeIn">
+            <div className="w-16 h-16 rounded-full bg-success/15 flex items-center justify-center mx-auto mb-3">
+              <CheckCircle2 className="text-success" size={36} />
+            </div>
+            <h1 className="text-2xl font-bold text-primary flex items-center justify-center gap-2">
+              {lang==='HI' ? 'शाबाश!' : 'All done!'}<Sparkles className="text-warm" size={22} />
+            </h1>
+            <p className="text-muted mt-2">
+              {lang==='HI' ? 'तुमने सारे खेल पूरे कर लिए। बहुत बढ़िया मेहनत!' : 'You finished all the games. Great effort!'}
+            </p>
+            <button className="btn-primary mt-6 inline-flex items-center gap-2" onClick={()=>navigate('/home')}>
+              {lang==='HI' ? 'घर जाओ' : 'Go to my home'} <ArrowRight size={16} />
             </button>
           </div>
         )}
       </div>
     </Layout>
   );
-}
+};
 
-// ─── Profile bar sub-component ────────────────────────────────────────────────
-// Shows a subtle bar for each learning dimension - no numbers, just relative fill
-const ProfileBar = ({ label, value, isDetected }) => (
-  <div className="flex items-center gap-3">
-    <span className={`text-xs w-28 text-right flex-shrink-0 ${isDetected ? 'font-semibold text-primary' : 'text-muted'}`}>
-      {label}
-    </span>
-    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-      <div
-        className={`h-full rounded-full transition-all duration-700 ${
-          isDetected ? 'bg-accent' : 'bg-gray-300'
-        }`}
-        style={{ width: `${Math.max(value * 100, 8)}%` }}
-      />
-    </div>
-  </div>
-);
+export default Screening;
