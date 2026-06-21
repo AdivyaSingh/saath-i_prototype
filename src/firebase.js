@@ -257,11 +257,15 @@ export async function verifyTeacherPin(classCode, pin) {
   }
 }
 
-// ─── READ: Subscribe to all students (real-time) ──────────────────────────────
-// Returns an unsubscribe function. Calls onUpdate(students[]) on every Firestore change.
-// TODO (production): filter by teacher's classCode — currently returns all students.
-export function subscribeToStudents(onUpdate) {
-  const q = query(studentsCol, orderBy('updatedAt', 'desc'));
+// ─── READ: Subscribe to students for a specific class ────────────────────────
+// classCode is required. Only returns students whose classCode field matches.
+// Returns an unsubscribe function.
+export function subscribeToStudents(onUpdate, classCode) {
+  // If a classCode is given, filter by it. Otherwise return everything (used by admin/debug).
+  const q = classCode
+    ? query(studentsCol, where('classCode', '==', classCode.toUpperCase().trim()), orderBy('updatedAt', 'desc'))
+    : query(studentsCol, orderBy('updatedAt', 'desc'));
+
   return onSnapshot(q, (snapshot) => {
     const students = [];
     snapshot.forEach((d) => students.push({ id: d.id, ...d.data() }));

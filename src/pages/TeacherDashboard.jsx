@@ -213,7 +213,7 @@ export default function TeacherDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const { appState, updateState } = useApp();
-  const { language, teacherLoggedIn, teacherName } = appState;
+  const { language, teacherLoggedIn, teacherName, teacherClassCode } = appState;
   const S = STRINGS[language];
 
   // ── Login / Register state ────────────────────────────────────────────────
@@ -325,20 +325,26 @@ export default function TeacherDashboard() {
     }
   };
 
-  // Firebase real-time students
+  // Firebase real-time students — filtered to this teacher's class code only.
   const [firebaseStudents, setFirebaseStudents] = useState([]);
 
   useEffect(() => {
-    const unsub = subscribeToStudents(setFirebaseStudents);
+    if (!teacherLoggedIn || !teacherClassCode) return;
+    const unsub = subscribeToStudents(setFirebaseStudents, teacherClassCode);
     return unsub;
-  }, []);
+  }, [teacherLoggedIn, teacherClassCode]);
 
-  // Merge DEMO_STUDENTS with Firebase students, deduplicate by id
+  // Only prepend demo students when the logged-in teacher is the SCH001 demo teacher.
+  // A newly registered teacher starts with an empty list until real students join.
   const allStudents = useMemo(() => {
-    const demoIds = new Set(DEMO_STUDENTS.map(s => s.id));
-    const uniqueFirebase = firebaseStudents.filter(s => !demoIds.has(s.id));
-    return [...DEMO_STUDENTS, ...uniqueFirebase];
-  }, [firebaseStudents]);
+    const isDemoClass = (teacherClassCode || '').toUpperCase() === 'SCH001';
+    if (isDemoClass) {
+      const demoIds = new Set(DEMO_STUDENTS.map(s => s.id));
+      const uniqueFirebase = firebaseStudents.filter(s => !demoIds.has(s.id));
+      return [...DEMO_STUDENTS, ...uniqueFirebase];
+    }
+    return firebaseStudents;
+  }, [firebaseStudents, teacherClassCode]);
 
   // Close panel on Escape key
   useEffect(() => {
@@ -696,6 +702,11 @@ export default function TeacherDashboard() {
           <p className="text-xs text-muted flex items-center gap-1.5 mt-0.5">
             <Wifi size={12} className="text-green-500" />
             <span>{language === 'HI' ? 'अभी सिंक हुआ' : 'Last synced: Just now'}</span>
+            {teacherClassCode && (
+              <span className="ml-2 font-mono font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded text-xs">
+                {teacherClassCode}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
