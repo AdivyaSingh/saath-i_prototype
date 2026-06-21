@@ -761,7 +761,7 @@ export default function TeacherDashboard() {
           </button>
           {/* Logout */}
           <button
-            onClick={() => updateState({ teacherLoggedIn: false })}
+            onClick={() => updateState({ teacherLoggedIn: false, teacherClassCode: null, teacherName: 'Ms. Lata' })}
             aria-label="Logout"
             className="flex items-center gap-1.5 text-sm text-muted border border-gray-200 px-3 py-1 rounded-lg min-h-[48px] hover:text-red-500 hover:border-red-200 transition-colors"
           >

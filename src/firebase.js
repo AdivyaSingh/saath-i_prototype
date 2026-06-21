@@ -260,20 +260,30 @@ export async function verifyTeacherPin(classCode, pin) {
 // ─── READ: Subscribe to students for a specific class ────────────────────────
 // classCode is required. Only returns students whose classCode field matches.
 // Returns an unsubscribe function.
+// NOTE: The filtered query uses only `where` (no orderBy) to avoid needing a
+// Firestore composite index. Sorting is done client-side after the snapshot.
 export function subscribeToStudents(onUpdate, classCode) {
-  // If a classCode is given, filter by it. Otherwise return everything (used by admin/debug).
   const q = classCode
-    ? query(studentsCol, where('classCode', '==', classCode.toUpperCase().trim()), orderBy('updatedAt', 'desc'))
+    ? query(studentsCol, where('classCode', '==', classCode.toUpperCase().trim()))
     : query(studentsCol, orderBy('updatedAt', 'desc'));
 
   return onSnapshot(q, (snapshot) => {
-    const students = [];
+    let students = [];
     snapshot.forEach((d) => students.push({ id: d.id, ...d.data() }));
+    // Sort client-side by updatedAt descending when using the filtered query.
+    if (classCode) {
+      students = students.sort((a, b) => {
+        const ta = a.updatedAt?.toMillis?.() ?? a.updatedAt ?? 0;
+        const tb = b.updatedAt?.toMillis?.() ?? b.updatedAt ?? 0;
+        return tb - ta;
+      });
+    }
     onUpdate(students);
   }, (err) => {
     console.error('[Firebase] subscribeToStudents error:', err);
   });
 }
+
 
 // ─── CONNECTION STATE ─────────────────────────────────────────────────────────
 // Uses browser online/offline events. Firestore web SDK handles reconnection internally.
