@@ -183,6 +183,139 @@ const portfolioIcon = {
   image: ImageIcon,
 };
 
+// ─── STUDENT NORMALIZER ─────────────────────────────────────────────────────
+// Firebase students only have the fields written by Screening.jsx and
+// saveStudentToFirebase(). This function ensures every student object,
+// regardless of source, has all the fields the dashboard expects so nothing
+// shows as 0 / undefined / blank.
+
+// Convert any Firestore/JS/string timestamp to milliseconds (0 if absent).
+const tsToMs = (val) => {
+  if (!val) return 0;
+  if (typeof val.toMillis === 'function') return val.toMillis();
+  if (val.seconds != null) return val.seconds * 1000;
+  if (val instanceof Date) return val.getTime();
+  if (typeof val === 'number') return val;
+  // Legacy string format from demo data (e.g. '2 hours ago', '1 day ago')
+  if (typeof val === 'string') {
+    const n = parseInt(val) || 0;
+    if (val.includes('hour'))  return Date.now() - n * 3600000;
+    if (val.includes('day'))   return Date.now() - n * 86400000;
+    if (val.includes('week'))  return Date.now() - n * 604800000;
+    return Date.now(); // 'just now' etc.
+  }
+  return 0;
+};
+
+function normalizeStudent(s) {
+  // Resolve the best available "last active" timestamp with fallback chain:
+  // lastActive → updatedAt (set on every write) → createdAt (set on first write)
+  // This ensures brand-new students who just completed screening are treated as
+  // active rather than inactive (which previously caused them to always show red).
+  const lastActiveMs =
+    tsToMs(s.lastActive) ||
+    tsToMs(s.updatedAt)  ||
+    tsToMs(s.createdAt)  ||
+    0;
+
+  // Derive status from daysSince unless explicitly stored.
+  let status = s.status;
+  if (!status) {
+    const daysSince = lastActiveMs ? (Date.now() - lastActiveMs) / 86400000 : 99;
+    if (daysSince > 7) status = 'red';
+    else if (daysSince > 2) status = 'yellow';
+    else status = 'green';
+  }
+
+  // Build a minimal masteryMap from screeningResults if none exists.
+  let masteryMap = s.masteryMap || null;
+  if (!masteryMap && s.screeningResults?.supportProfile) {
+    const sp = s.screeningResults.supportProfile;
+    masteryMap = {};
+    if (sp.reading    === 'high')    masteryMap['Reading (phonics)']    = 'struggling';
+    else if (sp.reading === 'some')  masteryMap['Reading (phonics)']    = 'in_progress';
+    else if (sp.reading === 'low')   masteryMap['Reading (phonics)']    = 'mastered';
+    if (sp.numeracy   === 'high')    masteryMap['Number sense']          = 'struggling';
+    else if (sp.numeracy === 'some') masteryMap['Number sense']          = 'in_progress';
+    else if (sp.numeracy === 'low')  masteryMap['Number sense']          = 'mastered';
+    if (sp.writing    === 'high')    masteryMap['Writing / tracing']     = 'struggling';
+    else if (sp.writing === 'some')  masteryMap['Writing / tracing']     = 'in_progress';
+    else if (sp.writing === 'low')   masteryMap['Writing / tracing']     = 'mastered';
+    if (sp.memory     === 'high')    masteryMap['Working memory']        = 'struggling';
+    else if (sp.memory === 'some')   masteryMap['Working memory']        = 'in_progress';
+    if (sp.attention  === 'high')    masteryMap['Attention / focus']     = 'struggling';
+    else if (sp.attention === 'some') masteryMap['Attention / focus']    = 'in_progress';
+  }
+
+  // _lastActiveMs is a pre-computed numeric value used only for sorting,
+  // so both the card display and the sort function share the same resolution logic.
+  return {
+    // Spread original data first so all Firestore fields are preserved
+    ...s,
+    // Override / fill in computed/derived fields that the dashboard always needs
+    status,
+    streakDays: s.streakDays ?? 0,
+    tier: s.tier ?? 1,
+    primarySupportArea: s.primarySupportArea || null,
+    masteryMap: masteryMap || undefined,
+    errorPatterns: Array.isArray(s.errorPatterns) ? s.errorPatterns : [],
+    teacherObservations: Array.isArray(s.teacherObservations) ? s.teacherObservations : [],
+    specialistNotes: Array.isArray(s.specialistNotes) ? s.specialistNotes : [],
+    aiSuggestion: s.aiSuggestion || null,
+    progressHistory: Array.isArray(s.progressHistory) ? s.progressHistory : [],
+    weeklyStats: s.weeklyStats ?? { timeSpent: '0m', activitiesCompleted: 0, helpRequests: 0 },
+    referralStatus: s.referralStatus || 'none',
+    school: s.school || (s.classCode ? `Code: ${s.classCode}` : 'School'),
+    // Pre-computed sort key (used by card display and lastActive sort)
+    _lastActiveMs: lastActiveMs,
+  };
+}
+
+// ─── TELEMETRY NORMALIZER ─────────────────────────────────────────────────────
+// Old records stored raw task results as telemetry:
+//   { rhyme: { concern, detail: { accuracy, meanRtMs } }, trace: { detail: { avgDeviation, jitter } }, ... }
+// New records (after the Screening.jsx fix) store a flat object:
+//   { rhymingSpeed, rhymingAccuracy, countingSpeed, countingAccuracy, ... }
+// This function converts old-format records to the flat format so the profile
+// panel always gets the correct field names regardless of when the student registered.
+function normalizeTelemetry(raw) {
+  if (!raw) return null;
+  // Already flat if it has any of the expected dashboard field names.
+  if (raw.rhymingSpeed != null || raw.rhymingAccuracy != null || raw.countingSpeed != null) return raw;
+  // Old format: keys are task IDs.
+  const rhymeDetail      = raw.rhyme?.detail      || {};
+  const firstSoundDetail = raw.firstsound?.detail || {};
+  const magnDetail       = raw.magnitude?.detail  || {};
+  const numlineDetail    = raw.numline?.detail     || {};
+  const traceDetail      = raw.trace?.detail       || {};
+
+  const rhymingRtMs     = rhymeDetail.meanRtMs ?? firstSoundDetail.meanRtMs ?? 0;
+  const rhymingSpeed    = +(rhymingRtMs / 1000).toFixed(1);
+  const rhymeAcc        = rhymeDetail.accuracy     != null ? rhymeDetail.accuracy     : null;
+  const fsAcc           = firstSoundDetail.accuracy != null ? firstSoundDetail.accuracy : null;
+  const rhymingAccuracy = rhymeAcc != null && fsAcc != null
+    ? Math.round((rhymeAcc + fsAcc) / 2 * 100)
+    : rhymeAcc != null ? Math.round(rhymeAcc * 100)
+    : fsAcc    != null ? Math.round(fsAcc    * 100) : 0;
+  const audioHelpUsed    = 0;
+  const countingRtMs     = magnDetail.meanRtMs ?? 0;
+  const countingSpeed    = +(countingRtMs / 1000).toFixed(1);
+  const magnAcc          = magnDetail.accuracy != null ? magnDetail.accuracy : null;
+  const nlErrPct         = numlineDetail.meanErrorPct != null ? numlineDetail.meanErrorPct : null;
+  const nlAcc            = nlErrPct != null ? Math.max(0, 100 - nlErrPct) : null;
+  const countingAccuracy = magnAcc != null && nlAcc != null
+    ? Math.round((magnAcc * 100 + nlAcc) / 2)
+    : magnAcc != null ? Math.round(magnAcc * 100)
+    : nlAcc   != null ? Math.round(nlAcc)  : 0;
+  const closeNumberConfusion = (raw.magnitude?.concern ?? 0) > 0.5;
+  const avgDeviation     = traceDetail.avgDeviation ?? 0;
+  const jitter           = traceDetail.jitter       ?? 0;
+  const lineSteadiness   = jitter < 0.3 ? 'Steady' : jitter < 0.6 ? 'Shaky' : 'Very Shaky';
+  const pathAccuracy     = avgDeviation;
+
+  return { rhymingSpeed, rhymingAccuracy, audioHelpUsed, countingSpeed, countingAccuracy, closeNumberConfusion, lineSteadiness, pathAccuracy };
+}
+
 // ─── SCREENING TELEMETRY HELPERS ──────────────────────────────────────────────
 
 /** Small horizontal bar for a metric value. widthPercent: 0–100 */
@@ -336,14 +469,17 @@ export default function TeacherDashboard() {
 
   // Only prepend demo students when the logged-in teacher is the SCH001 demo teacher.
   // A newly registered teacher starts with an empty list until real students join.
+  // normalizeStudent() ensures every record has all fields the dashboard expects.
   const allStudents = useMemo(() => {
     const isDemoClass = (teacherClassCode || '').toUpperCase() === 'SCH001';
     if (isDemoClass) {
       const demoIds = new Set(DEMO_STUDENTS.map(s => s.id));
-      const uniqueFirebase = firebaseStudents.filter(s => !demoIds.has(s.id));
+      const uniqueFirebase = firebaseStudents
+        .filter(s => !demoIds.has(s.id))
+        .map(normalizeStudent);
       return [...DEMO_STUDENTS, ...uniqueFirebase];
     }
-    return firebaseStudents;
+    return firebaseStudents.map(normalizeStudent);
   }, [firebaseStudents, teacherClassCode]);
 
   // Close panel on Escape key
@@ -369,23 +505,13 @@ export default function TeacherDashboard() {
         return (order[a.status] ?? 3) - (order[b.status] ?? 3);
       }
       if (sortBy === 'lastActive') {
-        const formatLastActive = (val) => {
-          if (!val) return null;
-          if (typeof val === 'string') return val;
-          if (val.toMillis) return `${Math.floor((Date.now() - val.toMillis()) / 3600000)} hours ago`;
-          if (val.seconds) return `${Math.floor((Date.now() - (val.seconds * 1000)) / 3600000)} hours ago`;
-          return String(val);
+        // Use pre-computed _lastActiveMs for Firebase students (from normalizeStudent).
+        // For demo students (plain objects), fall back to tsToMs on their lastActive string.
+        const getMs = (s) => {
+          if (s._lastActiveMs != null) return s._lastActiveMs;
+          return tsToMs(s.lastActive);
         };
-        // Parse "2 hours ago", "1 day ago", "8 days ago" for rough sort
-        const parseTime = (val) => {
-          const str = formatLastActive(val);
-          if (!str) return 9999;
-          const n = parseInt(str) || 0;
-          if (str.includes('hour')) return n;
-          if (str.includes('day'))  return n * 24;
-          return n * 24 * 7;
-        };
-        return parseTime(a.lastActive) - parseTime(b.lastActive);
+        return getMs(b) - getMs(a);
       }
       return 0;
     });
@@ -878,23 +1004,17 @@ export default function TeacherDashboard() {
               {/* Last active */}
               <p className="text-xs text-muted mb-1">
                 {language === 'HI' ? 'अंतिम सक्रिय:' : 'Last active:'} {
-                  (function(val) {
-                    if (!val) return '-';
-                    if (typeof val === 'string') return val;
-                    if (val.toMillis) {
-                      const diffHours = (Date.now() - val.toMillis()) / 3600000;
-                      if (diffHours < 1) return language === 'HI' ? 'अभी-अभी' : 'just now';
-                      if (diffHours < 24) return `${Math.floor(diffHours)} ${language === 'HI' ? 'घंटे पहले' : 'hours ago'}`;
-                      return `${Math.floor(diffHours / 24)} ${language === 'HI' ? 'दिन पहले' : 'days ago'}`;
-                    }
-                    if (val.seconds) {
-                      const diffHours = (Date.now() - (val.seconds * 1000)) / 3600000;
-                      if (diffHours < 1) return language === 'HI' ? 'अभी-अभी' : 'just now';
-                      if (diffHours < 24) return `${Math.floor(diffHours)} ${language === 'HI' ? 'घंटे पहले' : 'hours ago'}`;
-                      return `${Math.floor(diffHours / 24)} ${language === 'HI' ? 'दिन पहले' : 'days ago'}`;
-                    }
-                    return String(val);
-                  })(student.lastActive)
+                  (function() {
+                    // Use pre-computed _lastActiveMs (falls back to updatedAt / createdAt)
+                    const ms = student._lastActiveMs || tsToMs(student.lastActive);
+                    if (!ms) return '-';
+                    const diffHours = (Date.now() - ms) / 3600000;
+                    if (diffHours < 1)  return language === 'HI' ? 'अभी-अभी' : 'just now';
+                    if (diffHours < 24) return `${Math.floor(diffHours)} ${language === 'HI' ? 'घंटे पहले' : 'hours ago'}`;
+                    const diffDays = Math.floor(diffHours / 24);
+                    if (diffDays === 1) return language === 'HI' ? '1 दिन पहले' : '1 day ago';
+                    return `${diffDays} ${language === 'HI' ? 'दिन पहले' : 'days ago'}`;
+                  })()
                 }
               </p>
 
@@ -1096,7 +1216,10 @@ export default function TeacherDashboard() {
                   {language === 'HI' ? 'स्क्रीनिंग अंतर्दृष्टि' : 'Screening Insights'}
                 </h3>
 
-                {activeStudent.screeningResults && activeStudent.telemetry ? (
+                {/* Normalize telemetry: handles both old task-keyed format and new flat format */}
+                {(() => {
+                  const tel = normalizeTelemetry(activeStudent.telemetry);
+                  return activeStudent.screeningResults && tel ? (
                   <div className="space-y-4">
                     {/* ── Reading & Sound Tracking ── */}
                     <div className="bg-surface rounded-xl p-3 border border-gray-100">
@@ -1111,20 +1234,20 @@ export default function TeacherDashboard() {
                       <div className="divide-y divide-gray-100">
                         <TelemetryStat
                           label={language === 'HI' ? 'तुकबंदी गति' : 'Rhyming Speed'}
-                          value={`${activeStudent.telemetry.rhymingSpeed ?? 0}s avg`}
-                          barPercent={Math.max(0, 100 - ((activeStudent.telemetry.rhymingSpeed ?? 0) / 5) * 100)}
+                          value={`${tel.rhymingSpeed ?? 0}s avg`}
+                          barPercent={Math.max(0, 100 - ((tel.rhymingSpeed ?? 0) / 5) * 100)}
                           barColor="bg-accent"
                         />
                         <TelemetryStat
                           label={language === 'HI' ? 'ऑडियो सहायता उपयोग' : 'Audio Help Used'}
-                          value={`${activeStudent.telemetry.audioHelpUsed ?? 0} ${language === 'HI' ? 'बार' : 'times'}`}
-                          barPercent={Math.min(100, ((activeStudent.telemetry.audioHelpUsed ?? 0) / 10) * 100)}
+                          value={`${tel.audioHelpUsed ?? 0} ${language === 'HI' ? 'बार' : 'times'}`}
+                          barPercent={Math.min(100, ((tel.audioHelpUsed ?? 0) / 10) * 100)}
                           barColor="bg-blue-400"
                         />
                         <TelemetryStat
                           label={language === 'HI' ? 'तुकबंदी सटीकता' : 'Rhyming Accuracy'}
-                          value={`${activeStudent.telemetry.rhymingAccuracy ?? 0}%`}
-                          barPercent={activeStudent.telemetry.rhymingAccuracy ?? 0}
+                          value={`${tel.rhymingAccuracy ?? 0}%`}
+                          barPercent={tel.rhymingAccuracy ?? 0}
                           barColor="bg-green-500"
                         />
                       </div>
@@ -1143,14 +1266,14 @@ export default function TeacherDashboard() {
                       <div className="divide-y divide-gray-100">
                         <TelemetryStat
                           label={language === 'HI' ? 'गिनती गति' : 'Counting Speed'}
-                          value={`${activeStudent.telemetry.countingSpeed ?? 0}s avg`}
-                          barPercent={Math.max(0, 100 - ((activeStudent.telemetry.countingSpeed ?? 0) / 5) * 100)}
+                          value={`${tel.countingSpeed ?? 0}s avg`}
+                          barPercent={Math.max(0, 100 - ((tel.countingSpeed ?? 0) / 5) * 100)}
                           barColor="bg-indigo-500"
                         />
                         <TelemetryStat
                           label={language === 'HI' ? 'गिनती सटीकता' : 'Counting Accuracy'}
-                          value={`${activeStudent.telemetry.countingAccuracy ?? 0}%`}
-                          barPercent={activeStudent.telemetry.countingAccuracy ?? 0}
+                          value={`${tel.countingAccuracy ?? 0}%`}
+                          barPercent={tel.countingAccuracy ?? 0}
                           barColor="bg-green-500"
                         />
                         <div className="flex items-center justify-between gap-3 py-1.5">
@@ -1158,11 +1281,11 @@ export default function TeacherDashboard() {
                             {language === 'HI' ? 'नज़दीकी संख्या भ्रम' : 'Close Number Confusion'}
                           </span>
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            activeStudent.telemetry.closeNumberConfusion
+                            tel.closeNumberConfusion
                               ? 'bg-red-100 text-red-600'
                               : 'bg-green-100 text-green-600'
                           }`}>
-                            {activeStudent.telemetry.closeNumberConfusion
+                            {tel.closeNumberConfusion
                               ? (language === 'HI' ? 'हाँ' : 'Yes')
                               : (language === 'HI' ? 'नहीं' : 'No')}
                           </span>
@@ -1186,34 +1309,35 @@ export default function TeacherDashboard() {
                             {language === 'HI' ? 'रेखा स्थिरता' : 'Line Steadiness'}
                           </span>
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            activeStudent.telemetry.lineSteadiness === 'Steady'
+                            tel.lineSteadiness === 'Steady'
                               ? 'bg-green-100 text-green-600'
-                              : activeStudent.telemetry.lineSteadiness === 'Shaky'
+                              : tel.lineSteadiness === 'Shaky'
                               ? 'bg-yellow-100 text-yellow-600'
                               : 'bg-red-100 text-red-600'
                           }`}>
-                            {activeStudent.telemetry.lineSteadiness}
+                            {tel.lineSteadiness || '-'}
                           </span>
                         </div>
                         <TelemetryStat
                           label={language === 'HI' ? 'पथ सटीकता' : 'Path Accuracy'}
-                          value={`${activeStudent.telemetry.pathAccuracy ?? 0}px off-center`}
-                          barPercent={Math.min(100, ((activeStudent.telemetry.pathAccuracy ?? 0) / 30) * 100)}
+                          value={`${tel.pathAccuracy ?? 0}px off-center`}
+                          barPercent={Math.min(100, ((tel.pathAccuracy ?? 0) / 30) * 100)}
                           barColor="bg-calm"
                         />
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="bg-surface rounded-xl p-4 border border-gray-100 text-center">
-                    <Activity size={20} className="text-muted mx-auto mb-2 opacity-40" />
-                    <p className="text-xs text-muted italic">
-                      {language === 'HI'
-                        ? 'छात्र द्वारा मूल्यांकन पूरा करने के बाद स्क्रीनिंग डेटा उपलब्ध होगा'
-                        : 'Screening data available after student completes the assessment'}
-                    </p>
-                  </div>
-                )}
+                  ) : (
+                    <div className="bg-surface rounded-xl p-4 border border-gray-100 text-center">
+                      <Activity size={20} className="text-muted mx-auto mb-2 opacity-40" />
+                      <p className="text-xs text-muted italic">
+                        {language === 'HI'
+                          ? 'छात्र द्वारा मूल्यांकन पूरा करने के बाद स्क्रीनिंग डेटा उपलब्ध होगा'
+                          : 'Screening data available after student completes the assessment'}
+                      </p>
+                    </div>
+                  );
+                })()}
               </section>
 
               {/* ── Section 3: Error Pattern Insights ────────────────── */}

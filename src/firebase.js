@@ -176,6 +176,9 @@ export async function saveScreeningResults(studentId, screeningResults, telemetr
       screeningResults,
       telemetry,
       screenedAt: serverTimestamp(),
+      // Also bump lastActive so newly-screened students appear as recently active
+      // in the teacher dashboard and are sorted correctly.
+      lastActive: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
     return true;
@@ -262,19 +265,32 @@ export async function verifyTeacherPin(classCode, pin) {
 // Returns an unsubscribe function.
 // NOTE: The filtered query uses only `where` (no orderBy) to avoid needing a
 // Firestore composite index. Sorting is done client-side after the snapshot.
+
+// Helper: convert any Firestore/JS timestamp to ms for sorting.
+function toMs(val) {
+  if (!val) return 0;
+  if (typeof val.toMillis === 'function') return val.toMillis();
+  if (val.seconds != null) return val.seconds * 1000;
+  if (val instanceof Date) return val.getTime();
+  if (typeof val === 'number') return val;
+  return 0;
+}
+
 export function subscribeToStudents(onUpdate, classCode) {
   const q = classCode
     ? query(studentsCol, where('classCode', '==', classCode.toUpperCase().trim()))
-    : query(studentsCol, orderBy('updatedAt', 'desc'));
+    : query(studentsCol, orderBy('lastActive', 'desc'));
 
   return onSnapshot(q, (snapshot) => {
     let students = [];
     snapshot.forEach((d) => students.push({ id: d.id, ...d.data() }));
-    // Sort client-side by updatedAt descending when using the filtered query.
+    // Sort client-side: most-recently-active first.
+    // Fall back to updatedAt then createdAt for students who have not yet
+    // had any activity (e.g. just completed screening).
     if (classCode) {
       students = students.sort((a, b) => {
-        const ta = a.updatedAt?.toMillis?.() ?? a.updatedAt ?? 0;
-        const tb = b.updatedAt?.toMillis?.() ?? b.updatedAt ?? 0;
+        const ta = toMs(a.lastActive) || toMs(a.updatedAt) || toMs(a.createdAt);
+        const tb = toMs(b.lastActive) || toMs(b.updatedAt) || toMs(b.createdAt);
         return tb - ta;
       });
     }

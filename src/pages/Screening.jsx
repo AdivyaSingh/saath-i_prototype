@@ -631,6 +631,67 @@ const Screening = () => {
           concerns: profile.concerns,
           motorConcern,
         };
+
+        // Build a flat telemetry object using the field names TeacherDashboard expects.
+        // Raw resultsRef entries: { [taskId]: { domain, concern, detail: { ... } } }
+        const raw = resultsRef.current;
+        const rhymeDetail       = raw.rhyme?.detail     || {};
+        const firstSoundDetail  = raw.firstsound?.detail || {};
+        const magnDetail        = raw.magnitude?.detail  || {};
+        const numlineDetail     = raw.numline?.detail    || {};
+        const digitDetail       = raw.digit?.detail      || {};
+        const gngDetail         = raw.gonogo?.detail     || {};
+        const traceDetail       = raw.trace?.detail      || {};
+
+        // Rhyming speed: average response time in seconds (meanRtMs from rhyme task)
+        const rhymingRtMs  = rhymeDetail.meanRtMs ?? firstSoundDetail.meanRtMs ?? 0;
+        const rhymingSpeed = +(rhymingRtMs / 1000).toFixed(1);
+
+        // Rhyming accuracy: from rhyme + firstsound combined
+        const rhymeAcc     = rhymeDetail.accuracy     != null ? rhymeDetail.accuracy     : null;
+        const fsAcc        = firstSoundDetail.accuracy != null ? firstSoundDetail.accuracy : null;
+        const rhymingAccuracy = rhymeAcc != null && fsAcc != null
+          ? Math.round((rhymeAcc + fsAcc) / 2 * 100)
+          : rhymeAcc != null ? Math.round(rhymeAcc * 100)
+          : fsAcc   != null ? Math.round(fsAcc   * 100) : 0;
+
+        // Audio help used: we don't have a direct count yet; use 0 as default
+        // (this will be populated properly when in-app audio-help tracking is added)
+        const audioHelpUsed = 0;
+
+        // Counting speed: from number-line and magnitude tasks
+        const countingRtMs  = magnDetail.meanRtMs ?? 0;
+        const countingSpeed = +(countingRtMs / 1000).toFixed(1);
+
+        // Counting accuracy: from magnitude + numline combined
+        const magnAcc    = magnDetail.accuracy != null ? magnDetail.accuracy : null;
+        const nlErrPct   = numlineDetail.meanErrorPct != null ? numlineDetail.meanErrorPct : null;
+        const nlAcc      = nlErrPct != null ? Math.max(0, 100 - nlErrPct) : null;
+        const countingAccuracy = magnAcc != null && nlAcc != null
+          ? Math.round((magnAcc * 100 + nlAcc) / 2)
+          : magnAcc != null ? Math.round(magnAcc * 100)
+          : nlAcc   != null ? Math.round(nlAcc)  : 0;
+
+        // Close number confusion: flag if magnitude concern is high
+        const closeNumberConfusion = (raw.magnitude?.concern ?? 0) > 0.5;
+
+        // Motor/tracing metrics
+        const avgDeviation = traceDetail.avgDeviation ?? 0;
+        const jitter       = traceDetail.jitter       ?? 0;
+        const lineSteadiness = jitter < 0.3 ? 'Steady' : jitter < 0.6 ? 'Shaky' : 'Very Shaky';
+        const pathAccuracy   = avgDeviation; // px off-centre, raw from tracing
+
+        const telemetry = {
+          rhymingSpeed,
+          rhymingAccuracy,
+          audioHelpUsed,
+          countingSpeed,
+          countingAccuracy,
+          closeNumberConfusion,
+          lineSteadiness,
+          pathAccuracy,
+        };
+
         await saveStudentToFirebase({
           id: studentId,
           name: appState.studentName || 'Student',
@@ -642,8 +703,13 @@ const Screening = () => {
           motorConcern,
           screeningStatus: 'awaiting_observation',
           companion: appState.companion || null,
+          // Set lastActive at registration so the student shows as recently active
+          // in the teacher dashboard and sorts correctly by "Last Active".
+          lastActive: new Date(),
+          streakDays: 0,
+          weeklyStats: { timeSpent: '0m', activitiesCompleted: 1, helpRequests: 0 },
         });
-        await saveScreeningResults(studentId, screeningResults, resultsRef.current);
+        await saveScreeningResults(studentId, screeningResults, telemetry);
       }
     } catch (e) { /* offline-safe: local state already updated */ }
   }
