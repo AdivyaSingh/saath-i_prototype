@@ -7,11 +7,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BookOpen, Calculator, Palette, Brain, Flame, Trophy, Heart,
-  ArrowRight, Sparkles, Wind, Sun, Moon, CloudSun, LogOut,
+  ArrowRight, Sparkles, Wind, Sun, Moon, CloudSun, LogOut, HelpCircle,
 } from 'lucide-react';
 import { useApp } from '../App';
 import Layout from '../components/Layout';
 import { STRINGS, READING_CONTENT, MATH_ACTIVITIES } from '../data';
+import WalkthroughOverlay from '../components/WalkthroughOverlay';
+
+// localStorage key — set to 'done' once the student completes/skips the tour
+const STUDENT_TOUR_KEY = 'saathi_student_tour_done';
 
 // ─── BREATHING CYCLE CONFIG ───────────────────────────────────────────────────
 // 3 phases × 3 cycles = ~30s total (4s + 2s + 4s per cycle)
@@ -79,6 +83,22 @@ const StudentHome = () => {
   const navigate = useNavigate();
   const lang = appState.language || 'EN';
   const S = STRINGS[lang] || STRINGS.EN;
+
+  // ─── WALKTHROUGH STATE ────────────────────────────────────────────────────
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
+
+  useEffect(() => {
+    // Auto-trigger on first visit; small delay so page elements are rendered
+    if (!localStorage.getItem(STUDENT_TOUR_KEY)) {
+      const t = setTimeout(() => setShowWalkthrough(true), 600);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
+  const handleWalkthroughComplete = () => {
+    localStorage.setItem(STUDENT_TOUR_KEY, 'done');
+    setShowWalkthrough(false);
+  };
 
   // Local state
   const [showBreathingOverlay, setShowBreathingOverlay] = useState(false);
@@ -185,7 +205,7 @@ const StudentHome = () => {
           <p className="text-muted text-sm ml-9">{todayLabel}</p>
 
           {/* Motivational companion banner */}
-          <div className="mt-4 bg-gradient-to-r from-accent/10 to-primary/10 rounded-2xl p-4 flex items-center gap-3">
+          <div id="walkthrough-companion-banner" className="mt-4 bg-gradient-to-r from-accent/10 to-primary/10 rounded-2xl p-4 flex items-center gap-3">
             <span className="text-3xl" aria-hidden="true">
               {appState.companion?.emoji || '🦉'}
             </span>
@@ -212,9 +232,17 @@ const StudentHome = () => {
           <div className="space-y-3">
             {activities.map((act, idx) => {
               const IconComponent = act.icon;
+              // Map activity id → walkthrough spotlight id
+              const walkthroughId = {
+                focus:   'walkthrough-focus-zone',
+                reading: 'walkthrough-reading-room',
+                numbers: 'walkthrough-number-world',
+                catchup: 'walkthrough-catchup',
+              }[act.id];
               return (
                 <div
                   key={act.id}
+                  id={walkthroughId}
                   className={`card-elevated p-4 border-l-4 ${act.borderColor} animate-slideUp ${staggerClasses[idx]}`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -256,7 +284,7 @@ const StudentHome = () => {
         </div>
 
         {/* ── Achievement teaser ─────────────────────────── */}
-        <div className="animate-slideUp stagger-3">
+        <div id="walkthrough-achievements" className="animate-slideUp stagger-3">
           <button
             onClick={() => navigate('/achievements')}
             className="w-full bg-gradient-to-r from-success/10 to-accent/10 rounded-2xl p-4 flex items-center gap-3 border border-success/20 text-left hover:shadow-md transition-all duration-200"
@@ -302,12 +330,23 @@ const StudentHome = () => {
 
         {/* "I need help" button */}
         <button
+          id="walkthrough-help-button"
           onClick={openBreathingOverlay}
           className="bg-warm text-white rounded-xl px-4 py-2 min-h-[48px] text-sm font-semibold flex items-center gap-1.5 shadow-sm hover:shadow-md transition-all duration-200"
           aria-label={S.iAmStruggling}
         >
           <Heart className="w-4 h-4" />
           <span>{S.iAmStruggling}</span>
+        </button>
+
+        {/* Take a Tour button */}
+        <button
+          onClick={() => setShowWalkthrough(true)}
+          className="flex items-center gap-1.5 text-muted text-xs min-h-[48px] px-2 hover:text-accent transition-colors"
+          aria-label={lang === 'HI' ? 'दौरा करें' : 'Take a Tour'}
+          title={lang === 'HI' ? 'ऐप का दौरा करें' : 'Take a tour of the app'}
+        >
+          <HelpCircle className="w-4 h-4" />
         </button>
 
         {/* Logout / switch student */}
@@ -411,6 +450,15 @@ const StudentHome = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Student Walkthrough ───────────────────────────── */}
+      {showWalkthrough && (
+        <WalkthroughOverlay
+          mode="student"
+          lang={lang}
+          onComplete={handleWalkthroughComplete}
+        />
       )}
     </Layout>
   );
