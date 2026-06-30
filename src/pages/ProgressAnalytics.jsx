@@ -1,8 +1,8 @@
 // src/pages/ProgressAnalytics.jsx
 // Route: /teacher/analytics
-// Class-level progress analytics for teachers. Uses the local class roster
-// (DEMO_STUDENTS), so it works fully offline with no AI. Charts are drawn with
-// plain SVG and CSS — no chart library, so no package.json change is needed.
+// Class-level progress analytics for teachers. Subscribes to real Firebase
+// students (filtered by teacherClassCode), merging demo students for SCH001.
+// Charts are drawn with plain SVG and CSS — no chart library.
 //
 // Honest data note: each student's progressHistory is a weekly tracked score whose
 // direction is not a reliable signal on its own, so the "needs attention" and
@@ -10,13 +10,15 @@
 // and their error-pattern trends, which are the dependable signals. The sparkline is
 // shown as context only and is coloured by status, never used to assert a direction.
 
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Users, BarChart3, AlertTriangle, TrendingUp,
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useApp } from '../App';
-import { DEMO_STUDENTS, SUPPORT_AREAS, TIER_LABELS } from '../data';
+import { DEMO_STUDENTS, SUPPORT_AREAS } from '../data';
+import { subscribeToStudents } from '../firebase';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const supportAreaLabel = (areaId, language) => {
@@ -66,14 +68,78 @@ function Sparkline({ data, stroke }) {
   );
 }
 
+// ─── NORMALIZE STUDENT (mirrors TeacherDashboard logic) ───────────────────────
+// Derives status / weeklyStats from what student activity pages actually write.
+const normalizeStudent = (s) => {
+  let status = s.status;
+  if (!status) {
+    const ts = s.lastActive || s.updatedAt;
+    let diffHours = Infinity;
+    if (ts) {
+      if (ts.toMillis)        diffHours = (Date.now() - ts.toMillis()) / 3600000;
+      else if (ts.seconds)    diffHours = (Date.now() - ts.seconds * 1000) / 3600000;
+      else if (typeof ts === 'string') {
+        const n = parseInt(ts) || 0;
+        if (ts.includes('hour'))       diffHours = n;
+        else if (ts.includes('day'))   diffHours = n * 24;
+        else if (ts.includes('week'))  diffHours = n * 168;
+      }
+    }
+    if (diffHours < 48)       status = 'green';
+    else if (diffHours < 168) status = 'yellow';
+    else                      status = 'red';
+  }
+  const streakDays = s.streakDays ?? 0;
+  let weeklyStats = s.weeklyStats;
+  if (!weeklyStats) {
+    const flat = s.activitiesCompleted;
+    if (flat && typeof flat === 'object') {
+      const total = Object.values(flat).reduce((sum, v) => sum + (typeof v === 'number' ? v : 0), 0);
+      weeklyStats = { activitiesCompleted: total, timeSpent: total > 0 ? `~${total * 12}m` : '0m', helpRequests: s.helpRequests ?? 0 };
+    }
+  }
+  // derive primarySupportArea from supportProfile when missing
+  let { primarySupportArea } = s;
+  if (!primarySupportArea && s.supportProfile && typeof s.supportProfile === 'object') {
+    const order = { high: 3, some: 2, low: 1 };
+    let top = null, topLv = 0;
+    Object.entries(s.supportProfile).forEach(([area, level]) => {
+      const lv = order[level] ?? 0;
+      if (lv > topLv) { topLv = lv; top = area; }
+    });
+    primarySupportArea = top || 'reading';
+  }
+  return { ...s, status, streakDays, weeklyStats, primarySupportArea };
+};
+
+
 // ─── COMPONENT ──────────────────────────────────────────────────────────────
 const ProgressAnalytics = () => {
   const { appState, updateState } = useApp();
   const navigate = useNavigate();
   const language = appState.language || 'EN';
+  const { teacherClassCode } = appState;
   const t = (en, hi) => (language === 'HI' ? hi : en);
 
-  const students = DEMO_STUDENTS;
+  // Subscribe to real Firebase students
+  const [firebaseStudents, setFirebaseStudents] = useState([]);
+  useEffect(() => {
+    if (!teacherClassCode) return;
+    const unsub = subscribeToStudents(setFirebaseStudents, teacherClassCode);
+    return unsub;
+  }, [teacherClassCode]);
+
+  // Merge demo + real students (same logic as TeacherDashboard)
+  const students = useMemo(() => {
+    const isDemoClass = (teacherClassCode || '').toUpperCase() === 'SCH001';
+    if (isDemoClass) {
+      const demoIds = new Set(DEMO_STUDENTS.map(s => s.id));
+      const uniqueFirebase = firebaseStudents.filter(s => !demoIds.has(s.id)).map(normalizeStudent);
+      return [...DEMO_STUDENTS, ...uniqueFirebase];
+    }
+    return firebaseStudents.map(normalizeStudent);
+  }, [firebaseStudents, teacherClassCode]);
+
   const total = students.length;
 
   // Class summary (same definitions the dashboard uses, so the numbers agree).

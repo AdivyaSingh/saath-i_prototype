@@ -119,6 +119,159 @@ const FILTER_TABS = [
   { id: 'tier',      labelEN: 'By Tier',           labelHI: 'स्तर अनुसार' },
 ];
 
+// ─── NORMALIZE STUDENT ────────────────────────────────────────────────────────
+// Bridges every field mismatch between the real Firebase document structure
+// (written by student-facing pages) and what the teacher dashboard expects.
+//
+// This is the ONLY place that understands both shapes — keep it here so the
+// rest of the dashboard code stays clean and readable.
+//
+// Fields normalised:
+//   status            — derived from lastActive/updatedAt Firestore timestamp
+//   streakDays        — stored value or 0
+//   weeklyStats       — built from flat activitiesCompleted {reading:N, maths:N,…}
+//   telemetry         — real screening saves raw task results keyed by task id;
+//                       mapped to the named fields the panel renders
+//   teacherObservations (array) — TeacherObservation.jsx saves teacherObservation
+//                       (singular object); wrapped into the array the panel iterates
+//   primarySupportArea — derived from supportProfile if missing
+
+const normalizeStudent = (s) => {
+
+  // ── 1. status: derive from lastActive (real Firestore Timestamp) ─────────
+  let status = s.status;
+  if (!status) {
+    // Try lastActive first (set by updateStudentProgress), then updatedAt
+    const ts = s.lastActive || s.updatedAt;
+    let diffHours = Infinity;
+    if (ts) {
+      if (ts.toMillis)        diffHours = (Date.now() - ts.toMillis()) / 3600000;
+      else if (ts.seconds)    diffHours = (Date.now() - ts.seconds * 1000) / 3600000;
+      else if (typeof ts === 'string') {
+        const n = parseInt(ts) || 0;
+        if (ts.includes('hour'))       diffHours = n;
+        else if (ts.includes('day'))   diffHours = n * 24;
+        else if (ts.includes('week'))  diffHours = n * 168;
+      }
+    }
+    if (diffHours < 48)       status = 'green';
+    else if (diffHours < 168) status = 'yellow';
+    else                      status = 'red';   // includes Infinity (never active)
+  }
+
+  // ── 2. streakDays: use stored value or 0 ────────────────────────────────
+  const streakDays = s.streakDays ?? 0;
+
+  // ── 3. weeklyStats: build from flat activitiesCompleted ─────────────────
+  // Activity pages write:  activitiesCompleted: { reading: 2, maths: 1, … }
+  // The panel expects:     weeklyStats: { activitiesCompleted: N, timeSpent, helpRequests }
+  let weeklyStats = s.weeklyStats;
+  if (!weeklyStats) {
+    const flat = s.activitiesCompleted;
+    if (flat && typeof flat === 'object') {
+      const total = Object.values(flat).reduce(
+        (sum, v) => sum + (typeof v === 'number' ? v : 0), 0
+      );
+      weeklyStats = {
+        activitiesCompleted: total,
+        // rough estimate: ~12 min per completed activity
+        timeSpent: total > 0 ? `~${total * 12}m` : '0m',
+        helpRequests: s.helpRequests ?? 0,
+      };
+    }
+  }
+
+  // ── 4. telemetry: map real screening task results → panel field names ────
+  // Real screening saves resultsRef.current as the telemetry field.
+  // Shape: { rhyme: {domain,concern,detail}, magnitude: {…}, trace: {…}, … }
+  // The panel reads named fields like rhymingAccuracy, countingAccuracy, etc.
+  // We synthesise those from the task concern scores (0–1 scale).
+  let telemetry = s.telemetry;
+  if (telemetry && typeof telemetry === 'object') {
+    // Only translate if it looks like raw task results (has task-id keys),
+    // not already the named-field format the demo data uses.
+    const isRawFormat = 'rhyme' in telemetry || 'magnitude' in telemetry ||
+                        'trace' in telemetry  || 'gonogo' in telemetry;
+    if (isRawFormat) {
+      const r = telemetry; // shorthand
+      // concern is 0–1; higher = more support needed
+      const rhymeConcern    = r.rhyme?.concern      ?? r.firstsound?.concern ?? 0;
+      const countConcern    = r.magnitude?.concern  ?? r.numline?.concern    ?? 0;
+      const traceConcern    = r.trace?.concern       ?? 0;
+      const memConcern      = r.digit?.concern       ?? 0;
+      const attConcern      = r.gonogo?.concern      ?? 0;
+
+      // Convert to the field names the panel reads
+      telemetry = {
+        // Reading & Sound Tracking
+        rhymingAccuracy:   Math.round((1 - rhymeConcern) * 100),
+        rhymingSpeed:      parseFloat((rhymeConcern * 4 + 0.5).toFixed(1)),  // s avg
+        audioHelpUsed:     r.rhyme?.detail?.audioHelp ?? 0,
+
+        // Number Sense
+        countingAccuracy:  Math.round((1 - countConcern) * 100),
+        countingSpeed:     parseFloat((countConcern * 4 + 0.5).toFixed(1)),
+        closeNumberConfusion: countConcern > 0.55,
+
+        // Motor Control (from trace task)
+        lineSteadiness: traceConcern < 0.35 ? 'Steady'
+                       : traceConcern < 0.65 ? 'Shaky'
+                       : 'Unsteady',
+        pathAccuracy: Math.round(traceConcern * 25),  // px off-center proxy
+
+        // Keep raw data so IEP generator / future features can still use it
+        _raw: r,
+        _memConcern: memConcern,
+        _attConcern: attConcern,
+      };
+    }
+  }
+
+  // ── 5. teacherObservations array ─────────────────────────────────────────
+  // TeacherObservation.jsx saves: teacherObservation: { answers, context, completedBy }
+  // The panel iterates:           teacherObservations: [{ note, author, date }]
+  let teacherObservations = s.teacherObservations;
+  if (!teacherObservations && s.teacherObservation) {
+    const obs = s.teacherObservation;
+    // Build a readable summary from the observation data
+    const author = obs.completedBy || 'Teacher';
+    const date   = s.screenedAt
+      ? (s.screenedAt.toDate?.().toISOString().slice(0, 10) ?? String(s.screenedAt))
+      : (s.updatedAt?.toDate?.().toISOString().slice(0, 10) ?? '');
+    // Count how many concerns were flagged
+    const flaggedCount = obs.answers
+      ? Object.values(obs.answers).filter(v => v === 'yes' || v === true).length
+      : null;
+    const note = flaggedCount !== null
+      ? `Classroom observation completed. ${flaggedCount} concern area${flaggedCount !== 1 ? 's' : ''} noted across ${Object.keys(obs.answers || {}).length} items.`
+      : 'Classroom observation completed.';
+    teacherObservations = [{ note, author, date }];
+  }
+
+  // ── 6. primarySupportArea: derive from supportProfile if missing ──────────
+  let { primarySupportArea } = s;
+  if (!primarySupportArea && s.supportProfile && typeof s.supportProfile === 'object') {
+    const levelOrder = { high: 3, some: 2, low: 1 };
+    let topArea = null, topLevel = 0;
+    Object.entries(s.supportProfile).forEach(([area, level]) => {
+      const lv = levelOrder[level] ?? 0;
+      if (lv > topLevel) { topLevel = lv; topArea = area; }
+    });
+    primarySupportArea = topArea || 'reading';
+  }
+
+  return {
+    ...s,
+    status,
+    streakDays,
+    weeklyStats,
+    telemetry,
+    teacherObservations,
+    primarySupportArea,
+  };
+};
+
+
 // ─── DYNAMIC STATS DERIVED FROM DATA ──────────────────────────────────────────
 const deriveStats = (students, language) => {
   const total = students.length;
@@ -131,6 +284,7 @@ const deriveStats = (students, language) => {
     ];
   }
   const needsAttention = students.filter(s => s.status === 'red' || s.status === 'yellow').length;
+  // weeklyStats.activitiesCompleted is now always present after normalizeStudent()
   const avgSessions = Math.round(students.reduce((sum, s) => sum + (s.weeklyStats?.activitiesCompleted || 0), 0) / total);
   const improvingCount = students.reduce((sum, s) =>
     sum + (s.errorPatterns || []).filter(ep => ep.trend === 'improving').length, 0);
@@ -356,14 +510,19 @@ export default function TeacherDashboard() {
 
   // Only prepend demo students when the logged-in teacher is the SCH001 demo teacher.
   // A newly registered teacher starts with an empty list until real students join.
+  // All real Firebase students are run through normalizeStudent() so that fields
+  // the dashboard expects (status, streakDays, weeklyStats) are always present,
+  // even if the student's Firestore doc was created before those fields were added.
   const allStudents = useMemo(() => {
     const isDemoClass = (teacherClassCode || '').toUpperCase() === 'SCH001';
     if (isDemoClass) {
       const demoIds = new Set(DEMO_STUDENTS.map(s => s.id));
-      const uniqueFirebase = firebaseStudents.filter(s => !demoIds.has(s.id));
+      const uniqueFirebase = firebaseStudents
+        .filter(s => !demoIds.has(s.id))
+        .map(normalizeStudent);
       return [...DEMO_STUDENTS, ...uniqueFirebase];
     }
-    return firebaseStudents;
+    return firebaseStudents.map(normalizeStudent);
   }, [firebaseStudents, teacherClassCode]);
 
   // Close panel on Escape key

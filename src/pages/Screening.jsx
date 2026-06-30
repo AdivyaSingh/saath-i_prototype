@@ -642,6 +642,11 @@ const Screening = () => {
           motorConcern,
           screeningStatus: 'awaiting_observation',
           companion: appState.companion || null,
+          // Teacher dashboard fields — defaults so cards render correctly from day 1
+          status: 'green',
+          streakDays: appState.streakDays ?? 0,
+          activitiesCompleted: appState.activitiesCompleted || {},
+          referralStatus: 'none',
         });
         await saveScreeningResults(studentId, screeningResults, resultsRef.current);
       }
