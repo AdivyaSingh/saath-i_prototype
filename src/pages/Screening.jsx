@@ -17,8 +17,9 @@ import { Volume2, VolumeX, ArrowRight, Sparkles, CheckCircle2, Star } from 'luci
 import { useApp } from '../App';
 import { STRINGS, TYPICAL_THRESHOLD, SCREENING_TRACE_PATHS } from '../data';
 import Layout from '../components/Layout';
-import { saveStudentToFirebase, saveScreeningResults } from '../firebase';
+import { saveStudentToFirebase, saveScreeningResults, updateStudentProgress } from '../firebase';
 import confetti from 'canvas-confetti';
+import { generateInterventionPlan } from '../gemini';
 
 // ─── AUDIO (robust speechSynthesis helper) ──────────────────────────────────
 let voicesPrimed = false;
@@ -649,6 +650,22 @@ const Screening = () => {
           referralStatus: 'none',
         });
         await saveScreeningResults(studentId, screeningResults, resultsRef.current);
+
+        // ── Generate personalised intervention plan (non-blocking) ────────────
+        // Fire-and-forget: never delays the student. Plan appears on home page
+        // once Gemini responds. Persisted to both appState and Firebase.
+        generateInterventionPlan({
+          name:               appState.studentName || 'Student',
+          class:              appState.studentClass || 4,
+          language:           lang,
+          supportProfile:     profile.supportProfile,
+          primarySupportArea: profile.primarySupportArea,
+          tier:               profile.tier,
+        }).then(plan => {
+          if (!plan) return;
+          updateState({ interventionPlan: plan });
+          updateStudentProgress(studentId, { interventionPlan: plan }).catch(() => {});
+        }).catch(() => {});
       }
     } catch (e) { /* offline-safe: local state already updated */ }
   }

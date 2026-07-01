@@ -65,6 +65,9 @@ const defaultState = {
     expression: 0,
   },
 
+  // AI-generated personalised intervention plan (set after screening)
+  interventionPlan: null,
+
   // Teacher state
   teacherLoggedIn:  false,
   teacherName:     'Ms. Lata',

@@ -356,3 +356,85 @@ Return only the message text, nothing else.`;
   const msgs = fallbacks[language] || fallbacks.EN;
   return msgs[Math.floor(Math.random() * msgs.length)];
 }
+
+/**
+ * Generates a personalised 5-day intervention schedule for a student
+ * based on their screening support profile.
+ *
+ * Activities: focus (Focus Zone), reading (Reading Room),
+ *             numbers (Number World), catchup (Catch-Up Courses).
+ *
+ * Returns a structured JSON object, or null on AI failure.
+ * Fire-and-forget — never block the student flow on this.
+ *
+ * @param {{ name, class, language, supportProfile, primarySupportArea, tier }} student
+ */
+export async function generateInterventionPlan(student) {
+  const lang = (student.language || 'EN') === 'HI' ? 'Hindi' : 'English';
+
+  const supportLines = student.supportProfile
+    ? Object.entries(student.supportProfile)
+        .filter(([, level]) => level === 'some' || level === 'high')
+        .map(([area, level]) =>
+          `${area} (${level === 'high' ? 'needs significant support' : 'needs some support'})`
+        ).join(', ') || 'no specific areas flagged yet'
+    : 'not yet determined';
+
+  const tierMap = {
+    1: 'Tier 1 - Classroom Support',
+    2: 'Tier 2 - Targeted Intervention',
+    3: 'Tier 3 - Specialist Referral',
+  };
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const prompt = `You are an educational AI creating a personalised 5-day learning schedule for a Class ${student.class || 4} Indian school student named ${student.name || 'the student'}.
+
+Support profile: ${supportLines}
+Support tier: ${tierMap[student.tier] || 'Tier 1'}
+Primary area needing support: ${student.primarySupportArea || 'reading'}
+
+The app has exactly 4 activities:
+1. "focus"   - Focus Zone: attention and memory games (~5 min baseline)
+2. "reading" - Reading Room: guided reading and phonics (~10 min baseline)
+3. "numbers" - Number World: numeracy and counting games (~8 min baseline)
+4. "catchup" - Catch-Up Courses: personalised skill-building (~10 min baseline)
+
+Rules:
+- Assign MORE minutes to activities that target the student's HIGHEST support areas
+- All 4 activities appear across the week (not all 4 every day)
+- Each day has exactly 2 activities
+- whyKid must be warm, 1 sentence, in ${lang}, NO diagnosis labels
+- overallGoal, day names, activity names, tip must all be in ${lang}
+
+Return ONLY valid JSON, no markdown, no extra text:
+{
+  "overallGoal": "One encouraging sentence about this week's focus",
+  "generatedAt": "${today}",
+  "activities": [
+    { "activityId": "reading", "activityName": "Reading Room",    "priority": 1, "recommendedMinutes": 15, "whyKid": "..." },
+    { "activityId": "focus",   "activityName": "Focus Zone",      "priority": 2, "recommendedMinutes": 10, "whyKid": "..." },
+    { "activityId": "catchup", "activityName": "Catch-Up Courses","priority": 3, "recommendedMinutes": 12, "whyKid": "..." },
+    { "activityId": "numbers", "activityName": "Number World",    "priority": 4, "recommendedMinutes": 8,  "whyKid": "..." }
+  ],
+  "weeklyPlan": [
+    { "day": "Monday",    "activities": [{"id":"reading","minutes":15},{"id":"focus","minutes":10}] },
+    { "day": "Tuesday",   "activities": [{"id":"catchup","minutes":12},{"id":"numbers","minutes":8}] },
+    { "day": "Wednesday", "activities": [{"id":"reading","minutes":15},{"id":"catchup","minutes":10}] },
+    { "day": "Thursday",  "activities": [{"id":"numbers","minutes":10},{"id":"focus","minutes":10}] },
+    { "day": "Friday",    "activities": [{"id":"reading","minutes":12},{"id":"catchup","minutes":12}] }
+  ],
+  "tip": "One short, friendly overall tip for the week"
+}`;
+
+  const raw = await callGemini(prompt, 25000);
+  if (!raw) return null;
+  try {
+    const clean = raw.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    if (!parsed.activities || !parsed.weeklyPlan) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
