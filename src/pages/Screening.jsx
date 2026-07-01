@@ -96,7 +96,14 @@ const drawTrace = (ctx, guide, drawn, done) => {
   ctx.beginPath(); guide.forEach((p,i)=> i? ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); ctx.restore();
   if (drawn.length>1){ ctx.save(); ctx.setLineDash([]); ctx.strokeStyle = done ? '#2E8B57':'#2E75B6'; ctx.lineWidth=4; ctx.lineCap='round'; ctx.lineJoin='round';
     ctx.beginPath(); drawn.forEach((p,i)=> i? ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); ctx.restore(); }
-  if (guide[0]){ ctx.fillStyle='#E87722'; ctx.beginPath(); ctx.arc(guide[0].x, guide[0].y, 7, 0, Math.PI*2); ctx.fill(); }
+  if (guide[0]){ 
+    // Start dot
+    ctx.fillStyle='#E87722'; ctx.beginPath(); ctx.arc(guide[0].x, guide[0].y, 7, 0, Math.PI*2); ctx.fill(); 
+  }
+  if (guide.length>1) {
+    // End dot
+    ctx.fillStyle='#D64545'; ctx.beginPath(); ctx.arc(guide[guide.length-1].x, guide[guide.length-1].y, 7, 0, Math.PI*2); ctx.fill();
+  }
 };
 
 // ─── TRACE PATH TASK (writing / fine-motor; the kept dysgraphia test) ────────

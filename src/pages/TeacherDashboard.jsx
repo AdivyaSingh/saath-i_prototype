@@ -1094,7 +1094,7 @@ export default function TeacherDashboard() {
                       return `${Math.floor(diffHours / 24)} ${language === 'HI' ? 'दिन पहले' : 'days ago'}`;
                     }
                     return String(val);
-                  })(student.lastActive)
+                  })(student.lastActive || student.updatedAt)
                 }
               </p>
 
