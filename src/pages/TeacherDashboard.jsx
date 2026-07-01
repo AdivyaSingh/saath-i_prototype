@@ -48,10 +48,16 @@ const supportAreaLabel = (areaId, language) => {
   return language === 'HI' ? area.labelHI : area.labelEN;
 };
 
-// Short tier label, e.g. "Tier 2" / "स्तर 2"
+// Short support-level label — friendlier than "Tier 1/2/3" for teachers
 const tierShortLabel = (tier, language) => {
+  const labels = {
+    1: { EN: 'Monitoring',    HI: 'निगरानी' },
+    2: { EN: 'Some Support',  HI: 'कुछ सहायता' },
+    3: { EN: 'High Support',  HI: 'अधिक सहायता' },
+  };
   const n = tier || 1;
-  return language === 'HI' ? `स्तर ${n}` : `Tier ${n}`;
+  const l = labels[n] || labels[1];
+  return language === 'HI' ? l.HI : l.EN;
 };
 
 // Maps status → CSS status-dot class defined in index.css
@@ -1092,18 +1098,21 @@ export default function TeacherDashboard() {
                 }
               </p>
 
-              {/* Streak */}
-              {student.streakDays > 0 ? (
-                <p className="text-xs text-warm font-semibold mb-3 flex items-center gap-1">
-                  <Flame size={13} className="text-warm" />
-                  {student.streakDays}{language === 'HI' ? '-दिन स्ट्रीक' : '-day streak'}
-                </p>
-              ) : (
-                <p className="text-xs text-red-400 font-semibold mb-3 flex items-center gap-1">
-                  <AlertTriangle size={13} />
-                  {language === 'HI' ? 'कोई सक्रियता नहीं' : 'No recent activity'}
-                </p>
-              )}
+              {/* Last active / No recent activity */}
+              {(() => {
+                const ts = student.lastActive || student.updatedAt;
+                const hasActivity = !!ts;
+                if (hasActivity) {
+                  return null; // already shown in the "Last active:" line above
+                }
+                return (
+                  <p className="text-xs text-red-400 font-semibold mb-3 flex items-center gap-1">
+                    <AlertTriangle size={13} />
+                    {language === 'HI' ? 'अभी तक कोई गतिविधि नहीं' : 'No activity yet'}
+                  </p>
+                );
+              })()
+              }
 
               {/* Action buttons */}
               <div id={cardIndex === 0 ? 'walkthrough-iep-button' : undefined} className="flex gap-2 flex-wrap">
@@ -1121,7 +1130,7 @@ export default function TeacherDashboard() {
                   aria-label={`Generate IEP for ${student.name}`}
                   className="flex-1 bg-calm text-white text-xs font-semibold py-2 px-3 rounded-xl min-h-[48px] hover:bg-teal-600 transition-colors shadow-sm"
                 >
-                  {language === 'HI' ? 'IEP बनाएं' : 'Generate IEP'}
+                  {language === 'HI' ? 'सपोर्ट प्लान' : 'Support Plan'}
                 </motion.button>
                 {/* Refer to Special Educator — manual override always available;
                     only hidden once a referral already exists for this student. */}

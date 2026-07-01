@@ -497,8 +497,8 @@ const Onboarding = () => {
 
             {/* ── Sub-step 2: Grade ─────────────────────────────────── */}
             {subStep === 2 && (
-              <div className="grid grid-cols-5 gap-3 animate-fadeIn" role="group" aria-label="Select your class">
-                {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
+              <div className="grid grid-cols-4 gap-3 animate-fadeIn" role="group" aria-label="Select your class">
+                {[5, 6, 7, 8].map((num) => (
                   <button
                     key={num}
                     onClick={() => setSelectedClass(num)}

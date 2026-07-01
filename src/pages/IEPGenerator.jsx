@@ -75,7 +75,7 @@ const LOADING_STEPS_EN = [
   'Performance summary written',
   'SMART goals generated',
   'Accommodations selected',
-  'IEP ready for review',
+  'Support Plan ready for review',
 ];
 
 const LOADING_STEPS_HI = [
@@ -83,7 +83,7 @@ const LOADING_STEPS_HI = [
   'प्रदर्शन सारांश लिखा गया',
   'SMART लक्ष्य तैयार',
   'अनुकूलन चुने गए',
-  'IEP समीक्षा के लिए तैयार',
+  'सपोर्ट प्लान समीक्षा के लिए तैयार',
 ];
 
 // ─── STEP LABELS ──────────────────────────────────────────────────────────────
@@ -450,7 +450,7 @@ export default function IEPGenerator() {
               className="flex-1 btn-calm"
             >
               <Check size={16} />
-              {language === 'HI' ? 'हाँ, IEP बनाएं' : 'Yes, generate IEP'}
+              {language === 'HI' ? 'हाँ, सपोर्ट प्लान बनाएं' : 'Yes, generate Support Plan'}
             </button>
             <button
               onClick={() => navigate('/teacher')}
@@ -476,8 +476,8 @@ export default function IEPGenerator() {
 
           <h2 className="text-xl font-semibold text-primary mb-2">
             {language === 'HI'
-              ? 'NIEPID-अनुरेखित IEP बनाई जा रही है...'
-              : 'Generating NIEPID-aligned IEP...'}
+              ? 'NIEPID-अनुरेखित सपोर्ट प्लान बनाई जा रही है...'
+              : 'Generating NIEPID-aligned Support Plan...'}
           </h2>
           <p className="text-muted text-sm mb-8">
             {language === 'HI'
@@ -518,7 +518,7 @@ export default function IEPGenerator() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-primary flex items-center gap-2">
               <FileText size={18} className="text-calm" />
-              {language === 'HI' ? 'IEP पूर्वावलोकन' : 'IEP Preview'}
+              {language === 'HI' ? 'सपोर्ट प्लान पूर्वावलोकन' : 'Support Plan Preview'}
             </h2>
             <span className="text-xs bg-success/10 text-success font-semibold px-3 py-1 rounded-full border border-success/20">
               {language === 'HI' ? 'AI-जनित' : 'AI-generated'}
@@ -530,7 +530,7 @@ export default function IEPGenerator() {
             {/* Letterhead */}
             <div className="bg-gradient-to-r from-primary to-accent px-6 py-4">
               <p className="text-white font-bold text-base tracking-wide">
-                SAATHI - Individualised Education Plan
+                SAATHI - Personalised Support Plan
               </p>
               <p className="text-blue-200 text-xs mt-0.5">{student.school}</p>
               <p className="text-blue-100 text-xs mt-0.5">
@@ -617,7 +617,7 @@ export default function IEPGenerator() {
             className="w-full btn-calm mb-3"
           >
             <Check size={16} />
-            {language === 'HI' ? 'IEP अनुमोदित करें' : 'Approve IEP'}
+            {language === 'HI' ? 'सपोर्ट प्लान अनुमोदित करें' : 'Approve Support Plan'}
           </button>
           <button
             onClick={() => setCurrentStep(1)}
@@ -640,12 +640,12 @@ export default function IEPGenerator() {
             <CheckCircle2 size={40} className="text-success" />
           </div>
           <h2 className="text-xl font-bold text-primary mb-2">
-            {language === 'HI' ? 'IEP तैयार है!' : 'IEP Ready!'}
+            {language === 'HI' ? 'सपोर्ट प्लान तैयार है!' : 'Support Plan Ready!'}
           </h2>
           <p className="text-muted text-sm mb-2">
             {language === 'HI'
-              ? `${student.name} की प्रोफाइल में IEP सहेजी गई`
-              : `IEP saved to ${student.name}'s profile`}
+              ? `${student.name} की प्रोफाइल में सपोर्ट प्लान सहेजी गई`
+              : `Support Plan saved to ${student.name}'s profile`}
           </p>
           <p className="text-xs text-muted mb-8">
             {language === 'HI'
@@ -656,7 +656,7 @@ export default function IEPGenerator() {
           {/* Summary of what was approved */}
           <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 text-left mb-6 max-w-sm mx-auto">
             <p className="text-sm font-semibold text-primary mb-2">
-              {language === 'HI' ? 'IEP सारांश' : 'IEP Summary'}
+              {language === 'HI' ? 'सपोर्ट प्लान सारांश' : 'Support Plan Summary'}
             </p>
             <div className="space-y-1.5 text-xs text-muted">
               <p className="flex items-center gap-2">

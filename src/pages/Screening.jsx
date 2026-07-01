@@ -113,31 +113,102 @@ function TracePathTask({ lang, audioOn, onDone }){
   const path = SCREENING_TRACE_PATHS[idx];
   const guide = path ? toCanvasCoords(path.points, W, H) : [];
 
+  // Draw guide on start / path change
   useEffect(()=>{
     if (!started) return;
     const c = canvasRef.current; if (!c) return;
     drawTrace(c.getContext('2d'), guide, [], false);
+    drawnRef.current = [];
+    drawingRef.current = false;
     if (audioOn) speak(lang==='HI'?'बिंदु से शुरू करके लाइन पर उंगली फेरो':'Start at the dot and trace along the line', lang);
     // eslint-disable-next-line
   }, [started, idx]);
 
+  // ── Non-passive touch listeners so preventDefault() actually works ──────────
+  // React JSX onTouchStart/onTouchMove are passive by default in modern browsers,
+  // meaning e.preventDefault() is silently ignored and the page scrolls during
+  // drawing, causing coordinates to drift and only one point to be recorded.
+  useEffect(()=>{
+    if (!started) return;
+    const c = canvasRef.current; if (!c) return;
+
+    const getPos = (e) => getCanvasPos(e.touches[0] || e.changedTouches[0], c);
+
+    const onTouchStart = (e) => {
+      e.preventDefault();
+      if (done) return;
+      drawingRef.current = true;
+      drawnRef.current = [getPos(e)];
+    };
+    const onTouchMove = (e) => {
+      e.preventDefault();
+      if (!drawingRef.current) return;
+      drawnRef.current.push(getPos(e));
+      drawTrace(c.getContext('2d'), guide, drawnRef.current, false);
+    };
+    const onTouchEnd = (e) => {
+      e.preventDefault();
+      if (!drawingRef.current) return;
+      drawingRef.current = false;
+      if (drawnRef.current.length < 5) return;
+      const m = computeTraceMetrics(drawnRef.current, guide);
+      const a = accRef.current;
+      a.avgDeviation = (a.avgDeviation*a.n + m.avgDeviation)/(a.n+1);
+      a.jitterScore  = (a.jitterScore*a.n  + m.jitterScore)/(a.n+1);
+      a.completionPct= (a.completionPct*a.n + m.completionPct)/(a.n+1);
+      a.n++;
+      drawTrace(c.getContext('2d'), guide, drawnRef.current, true);
+      // trigger re-render so "Next/Done" button becomes active
+      // We use a tiny hack: set done via a custom event so we stay inside the effect
+      c.dispatchEvent(new CustomEvent('tracedone'));
+    };
+
+    c.addEventListener('touchstart', onTouchStart, { passive: false });
+    c.addEventListener('touchmove',  onTouchMove,  { passive: false });
+    c.addEventListener('touchend',   onTouchEnd,   { passive: false });
+    return () => {
+      c.removeEventListener('touchstart', onTouchStart);
+      c.removeEventListener('touchmove',  onTouchMove);
+      c.removeEventListener('touchend',   onTouchEnd);
+    };
+  // eslint-disable-next-line
+  }, [started, idx, guide, done]);
+
+  // Listen for the custom 'tracedone' event to set React done state
+  useEffect(()=>{
+    if (!started) return;
+    const c = canvasRef.current; if (!c) return;
+    const handler = () => setDone(true);
+    c.addEventListener('tracedone', handler);
+    return () => c.removeEventListener('tracedone', handler);
+  }, [started, idx]);
+
   if (!started) return <TaskIntro icon={Star} title={lang==='HI'?'लाइन पर चलो':'Trace the Line'} text={lang==='HI'?'बिंदु से शुरू करके बिंदीदार लाइन पर उंगली फेरो।':'Start at the dot and trace along the dotted line with your finger.'} lang={lang} audioOn={audioOn} onStart={()=>setStarted(true)} />;
 
+  // Mouse handlers (desktop) — passive is fine for mouse events
   const pos = (e) => getCanvasPos(e, canvasRef.current);
-  const down = (e) => { if (done) return; e.preventDefault(); drawingRef.current = true; drawnRef.current = [pos(e)]; };
-  const move = (e) => { if (!drawingRef.current || done) return; e.preventDefault(); drawnRef.current.push(pos(e)); drawTrace(canvasRef.current.getContext('2d'), guide, drawnRef.current, false); };
-  const up = (e) => {
-    if (!drawingRef.current) return; e.preventDefault(); drawingRef.current = false;
+  const mouseDown = (e) => { if (done) return; e.preventDefault(); drawingRef.current = true; drawnRef.current = [pos(e)]; };
+  const mouseMove = (e) => {
+    if (!drawingRef.current || done) return;
+    e.preventDefault();
+    drawnRef.current.push(pos(e));
+    drawTrace(canvasRef.current.getContext('2d'), guide, drawnRef.current, false);
+  };
+  const mouseUp = (e) => {
+    if (!drawingRef.current) return;
+    e.preventDefault();
+    drawingRef.current = false;
     if (drawnRef.current.length < 5) return;
     const m = computeTraceMetrics(drawnRef.current, guide);
     const a = accRef.current;
     a.avgDeviation = (a.avgDeviation*a.n + m.avgDeviation)/(a.n+1);
-    a.jitterScore = (a.jitterScore*a.n + m.jitterScore)/(a.n+1);
-    a.completionPct = (a.completionPct*a.n + m.completionPct)/(a.n+1);
+    a.jitterScore  = (a.jitterScore*a.n  + m.jitterScore)/(a.n+1);
+    a.completionPct= (a.completionPct*a.n + m.completionPct)/(a.n+1);
     a.n++;
     setDone(true);
     drawTrace(canvasRef.current.getContext('2d'), guide, drawnRef.current, true);
   };
+
   const next = () => {
     if (idx+1 < SCREENING_TRACE_PATHS.length){ setIdx(idx+1); setDone(false); drawnRef.current = []; }
     else {
@@ -158,9 +229,8 @@ function TracePathTask({ lang, audioOn, onDone }){
       </div>
       <div className="card-elevated p-3 flex flex-col items-center">
         <canvas ref={canvasRef} width={W} height={H}
-          style={{ width:'100%', maxWidth:W, touchAction:'none', borderRadius:12, cursor:'crosshair' }}
-          onMouseDown={down} onMouseMove={move} onMouseUp={up} onMouseLeave={up}
-          onTouchStart={down} onTouchMove={move} onTouchEnd={up} />
+          style={{ width:'100%', maxWidth:W, touchAction:'none', borderRadius:12, cursor:'crosshair', userSelect:'none' }}
+          onMouseDown={mouseDown} onMouseMove={mouseMove} onMouseUp={mouseUp} onMouseLeave={mouseUp} />
         <button className={`btn-primary mt-4 inline-flex items-center gap-2 ${done?'':'opacity-50 pointer-events-none'}`} onClick={next}>
           {idx+1 < SCREENING_TRACE_PATHS.length ? (lang==='HI'?'अगला':'Next') : (lang==='HI'?'हो गया':'Done')} <ArrowRight size={16} />
         </button>
@@ -168,6 +238,7 @@ function TracePathTask({ lang, audioOn, onDone }){
     </div>
   );
 }
+
 
 // ─── CONTENT BANKS (local; literacy items run in English with bilingual
 //     instructions — Hindi literacy banks are a planned addition) ────────────
