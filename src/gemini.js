@@ -199,10 +199,10 @@ Return ONLY valid JSON with NO markdown backticks:
  * Returns formatted text string or null.
  */
 export async function generateIEP(student) {
-  const mastered = Object.entries(student.masteryMap)
-    .filter(([, v]) => v === 'mastered').map(([k]) => k);
-  const struggling = Object.entries(student.masteryMap)
-    .filter(([, v]) => v === 'struggling').map(([k]) => k);
+  const mastered = student.masteryMap ? Object.entries(student.masteryMap)
+    .filter(([, v]) => v === 'mastered').map(([k]) => k) : [];
+  const struggling = student.masteryMap ? Object.entries(student.masteryMap)
+    .filter(([, v]) => v === 'struggling').map(([k]) => k) : [];
 
   // Support profile, expressed by area and level — never as a named condition.
   const supportAreaLines = student.supportProfile
@@ -244,7 +244,7 @@ Student Details:
 - Current tier: ${tierText}
 - Mastered concepts: ${mastered.join(', ') || 'None yet'}
 - Struggling areas: ${struggling.join(', ') || 'None identified'}
-- Key error patterns: ${student.errorPatterns.map(e => e.pattern).join('; ') || 'None recorded'}
+- Key error patterns: ${(student.errorPatterns || []).map(e => e.pattern).join('; ') || 'None recorded'}
 - Data window: ${dataWindowText}
 
 Teacher observations (classroom notes):
@@ -302,7 +302,7 @@ export async function generateStudentInsight(student) {
 
 Student: ${student.name}, Class ${student.class}
 This week: ${student.weeklyStats.timeSpent} spent, ${student.weeklyStats.activitiesCompleted} activities, asked for help ${student.weeklyStats.helpRequests} times
-Error patterns: ${student.errorPatterns.map(e => `${e.pattern} (${e.trend})`).join('; ')}
+Error patterns: ${(student.errorPatterns || []).map(e => `${e.pattern} (${e.trend})`).join('; ')}
 
 Generate a brief, actionable teaching suggestion (2-3 sentences) that:
 - References specific observations from the data
