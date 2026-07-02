@@ -162,12 +162,12 @@ const TEACHER_STEPS = [
   {
     targetId: 'walkthrough-iep-button',
     emoji: '📋',
-    titleEN: 'Generate an IEP in Minutes',
-    titleHI: 'मिनटों में IEP बनाएं',
+    titleEN: 'Generate a Support Plan in Minutes',
+    titleHI: 'मिनटों में सपोर्ट प्लान बनाएं',
     bodyEN:
-      'Tap "Generate IEP" on any student card to create an Individualized Education Plan for that child. Saath-i automatically fills it using the child\'s screening results, your own observations, weeks of activity data, and specialist notes — so what used to take 3–4 hours now takes minutes. You review and approve every word before it is saved.',
+      'Tap "Support Plan" on any student card to create a personalized plan for that child. Saath-i automatically fills it using the child\'s screening results, your own observations, weeks of activity data, and specialist notes — so what used to take 3–4 hours now takes minutes. You review and approve every word before it is saved.',
     bodyHI:
-      'किसी भी छात्र कार्ड पर "IEP बनाएं" टैप करें ताकि उस बच्चे के लिए व्यक्तिगत शिक्षा योजना बनाई जा सके। साथी इसे स्वचालित रूप से बच्चे के स्क्रीनिंग परिणाम, आपकी अपनी टिप्पणियों, हफ्तों के गतिविधि डेटा, और विशेषज्ञ नोट्स का उपयोग करके भरता है — जो पहले 3-4 घंटे लेता था वह अब मिनटों में होता है। सहेजने से पहले आप हर शब्द की समीक्षा और अनुमोदन करते हैं।',
+      'किसी भी छात्र कार्ड पर "सपोर्ट प्लान" टैप करें ताकि उस बच्चे के लिए व्यक्तिगत सहायता योजना बनाई जा सके। साथी इसे स्वचालित रूप से बच्चे के स्क्रीनिंग परिणाम, आपकी अपनी टिप्पणियों, हफ्तों के गतिविधि डेटा, और विशेषज्ञ नोट्स का उपयोग करके भरता है — जो पहले 3-4 घंटे लेता था वह अब मिनटों में होता है। सहेजने से पहले आप हर शब्द की समीक्षा और अनुमोदन करते हैं।',
     position: 'bottom',
   },
   {

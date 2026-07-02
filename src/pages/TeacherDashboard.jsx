@@ -1127,7 +1127,7 @@ export default function TeacherDashboard() {
                 <motion.button
                   onClick={() => navigate(`/teacher/iep/${student.id}`)}
                   whileTap={{ scale: 0.97 }}
-                  aria-label={`Generate IEP for ${student.name}`}
+                  aria-label={`Generate Support Plan for ${student.name}`}
                   className="flex-1 bg-calm text-white text-xs font-semibold py-2 px-3 rounded-xl min-h-[48px] hover:bg-teal-600 transition-colors shadow-sm"
                 >
                   {language === 'HI' ? 'सपोर्ट प्लान' : 'Support Plan'}
@@ -1534,8 +1534,8 @@ export default function TeacherDashboard() {
                         <p className="text-xs text-calm mt-2 flex items-center gap-1.5">
                           <ClipboardList size={12} />
                           {language === 'HI'
-                            ? 'ये सुझाव अब IEP बनाते समय शामिल होंगे।'
-                            : 'These are now included automatically when you generate an IEP.'}
+                            ? 'ये सुझाव अब सपोर्ट प्लान बनाते समय शामिल होंगे।'
+                            : 'These are now included automatically when you generate a Support Plan.'}
                         </p>
                       </div>
                     )}
@@ -1687,19 +1687,19 @@ export default function TeacherDashboard() {
                   <p className="text-xs text-calm text-center flex items-center justify-center gap-1.5">
                     <ClipboardList size={12} />
                     {language === 'HI'
-                      ? 'विशेषज्ञ सुझाव इस IEP में स्वतः शामिल होंगे।'
-                      : "Specialist recommendations will be included in this student's IEP automatically."}
+                      ? 'विशेषज्ञ सुझाव इस सपोर्ट प्लान में स्वतः शामिल होंगे।'
+                      : "Specialist recommendations will be included in this student's Support Plan automatically."}
                   </p>
                 )}
                 <motion.button
                   onClick={() => navigate(`/teacher/iep/${activeStudent.id}`)}
                   whileTap={{ scale: 0.97 }}
-                  aria-label={`Generate IEP for ${activeStudent.name}`}
+                  aria-label={`Generate Support Plan for ${activeStudent.name}`}
                   className="w-full bg-warm text-white font-semibold py-3 px-6 rounded-xl min-h-[48px] hover:bg-orange-600 transition-colors shadow-sm"
                 >
                   {language === 'HI'
-                    ? `${activeStudent.name} के लिए IEP बनाएं →`
-                    : `Generate IEP for ${activeStudent.name} →`}
+                    ? `${activeStudent.name} के लिए सपोर्ट प्लान बनाएं →`
+                    : `Generate Support Plan for ${activeStudent.name} →`}
                 </motion.button>
               </div>
             </div>

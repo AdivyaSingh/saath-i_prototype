@@ -130,7 +130,7 @@ export default function IEPGenerator() {
   const [apiUsed, setApiUsed]               = useState(null);
 
   // Derived data for Step 1 summary
-  const mastered   = student ? Object.entries(student.masteryMap).filter(([, v]) => v === 'mastered').map(([k]) => k) : [];
+  const mastered   = (student && student.masteryMap) ? Object.entries(student.masteryMap).filter(([, v]) => v === 'mastered').map(([k]) => k) : [];
   // Support areas come straight from the support profile (areas at 'some' or 'high'),
   // so this section can never disagree with the tier, the primary support area, or the
   // error patterns shown below. This removes the old "None identified" contradiction.
@@ -143,7 +143,7 @@ export default function IEPGenerator() {
     : [];
   // Specific still-developing skills (from mastery data), shown as supporting detail
   // under the support areas. Includes both 'struggling' and 'not_started' concepts.
-  const focusSkills = student
+  const focusSkills = (student && student.masteryMap)
     ? Object.entries(student.masteryMap).filter(([, v]) => v === 'struggling' || v === 'not_started').map(([k]) => k)
     : [];
 
@@ -388,14 +388,20 @@ export default function IEPGenerator() {
                 <Search size={14} className="text-muted" />
                 <span>{language === 'HI' ? 'त्रुटि पैटर्न' : 'Key Error Patterns'}</span>
               </p>
-              <ul className="space-y-1.5">
-                {student.errorPatterns.map((ep, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-primary">
-                    <span className="text-muted flex-shrink-0 mt-0.5">•</span>
-                    <span>{ep.pattern} <span className="text-muted">({ep.frequency})</span></span>
-                  </li>
-                ))}
-              </ul>
+              {student.errorPatterns && student.errorPatterns.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {student.errorPatterns.map((ep, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-primary">
+                      <span className="text-muted flex-shrink-0 mt-0.5">•</span>
+                      <span>{ep.pattern} <span className="text-muted">({ep.frequency})</span></span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted italic">
+                  {language === 'HI' ? 'अभी कोई पैटर्न पहचाना नहीं गया' : 'No patterns identified yet'}
+                </p>
+              )}
             </div>
 
             {/* Teacher observations */}
