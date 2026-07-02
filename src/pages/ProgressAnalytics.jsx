@@ -283,7 +283,25 @@ const ProgressAnalytics = () => {
                     <span className={`badge badge-tier-${s.tier || 1}`}>{tierShort(s.tier, language)}</span>
                   </div>
                   <p className="text-xs text-muted mt-0.5">
-                    {supportAreaLabel(s.primarySupportArea, language)} · {s.weeklyStats?.activitiesCompleted ?? 0} {t('activities', 'गतिविधियाँ')} · {s.lastActive}
+                    {supportAreaLabel(s.primarySupportArea, language)} · {s.weeklyStats?.activitiesCompleted ?? 0} {t('activities', 'गतिविधियाँ')} · {
+                      (function(val) {
+                        if (!val) return '-';
+                        if (typeof val === 'string') return val;
+                        if (val.toMillis) {
+                          const diffHours = (Date.now() - val.toMillis()) / 3600000;
+                          if (diffHours < 1) return t('just now', 'अभी-अभी');
+                          if (diffHours < 24) return `${Math.floor(diffHours)} ${t('hours ago', 'घंटे पहले')}`;
+                          return `${Math.floor(diffHours / 24)} ${t('days ago', 'दिन पहले')}`;
+                        }
+                        if (val.seconds) {
+                          const diffHours = (Date.now() - (val.seconds * 1000)) / 3600000;
+                          if (diffHours < 1) return t('just now', 'अभी-अभी');
+                          if (diffHours < 24) return `${Math.floor(diffHours)} ${t('hours ago', 'घंटे पहले')}`;
+                          return `${Math.floor(diffHours / 24)} ${t('days ago', 'दिन पहले')}`;
+                        }
+                        return String(val);
+                      })(s.lastActive || s.updatedAt)
+                    }
                   </p>
                 </div>
                 <div className="text-right flex-shrink-0">
